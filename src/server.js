@@ -38,10 +38,19 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // Middleware
+console.log('🔧 Configurando CORS...');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
+console.log('CORS_ALLOWED_ORIGINS:', process.env.CORS_ALLOWED_ORIGINS);
+
+const corsOrigins = process.env.NODE_ENV === 'production' 
+  ? (process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [process.env.FRONTEND_URL])
+  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:8080'];
+
+console.log('🌐 CORS Origins configurados:', corsOrigins);
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? (process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [process.env.FRONTEND_URL])
-    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:8080'],
+  origin: corsOrigins,
   credentials: true,
 }));
 app.use(express.json());
@@ -310,6 +319,21 @@ app.get('/health', (req, res) => {
     success: true,
     message: 'Backend funcionando!',
     timestamp: new Date().toISOString()
+  });
+});
+
+// Debug endpoint para verificar variáveis de ambiente
+app.get('/debug/env', (req, res) => {
+  res.json({
+    success: true,
+    environment: {
+      NODE_ENV: process.env.NODE_ENV,
+      PORT: process.env.PORT,
+      FRONTEND_URL: process.env.FRONTEND_URL,
+      CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+      hasDatabase: !!process.env.DATABASE_URL,
+      hasAWS: !!process.env.AWS_ACCESS_KEY_ID,
+    }
   });
 });
 
