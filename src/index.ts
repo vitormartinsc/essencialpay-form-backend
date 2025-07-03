@@ -1,17 +1,39 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import multer from 'multer';
+import dotenv from 'dotenv';
+import { uploadFileToS3 } from './utils/s3Upload';
+
+dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5176'],
+  origin: ['http://localhost:5173', 'http://localhost:5176', 'http://localhost:8080'],
   credentials: true,
 }));
 app.use(express.json());
+
+// Configuração do multer para upload de arquivos
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+  fileFilter: (req, file, cb) => {
+    // Aceitar apenas imagens e PDFs
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de arquivo não permitido'));
+    }
+  },
+});
 
 // Pasta para salvar os dados (depois você substitui pelo S3)
 const dataDir = path.join(__dirname, '../data');
@@ -20,7 +42,7 @@ if (!fs.existsSync(dataDir)) {
 }
 
 // Rota para salvar os dados do formulário
-app.post('/api/users', (req, res) => {
+app.post('/api/users', (req: Request, res: Response) => {
   try {
     const userData = {
       id: Date.now().toString(), // ID simples baseado no timestamp
@@ -51,7 +73,7 @@ app.post('/api/users', (req, res) => {
 });
 
 // Rota para listar usuários salvos
-app.get('/api/users', (req, res) => {
+app.get('/api/users', (req: Request, res: Response) => {
   try {
     const files = fs.readdirSync(dataDir).filter(file => file.endsWith('.json'));
     const users = files.map(file => {
@@ -73,7 +95,7 @@ app.get('/api/users', (req, res) => {
 });
 
 // Rota para buscar CEP
-app.get('/api/cep/:cep', (req, res) => {
+app.get('/api/cep/:cep', async (req: Request, res: Response) => {
   const { cep } = req.params;
   
   // Remove formatação do CEP (deixa só números)
@@ -87,49 +109,111 @@ app.get('/api/cep/:cep', (req, res) => {
     });
   }
 
-  // Busca na API do ViaCEP
-  fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
-    .then(response => response.json())
-    .then(data => {
-      if (data.erro) {
-        return res.status(404).json({
-          success: false,
-          message: 'CEP não encontrado'
-        });
-      }
-
-      res.json({
-        success: true,
-        data: {
-          cep: data.cep,
-          logradouro: data.logradouro,
-          complemento: data.complemento,
-          bairro: data.bairro,
-          localidade: data.localidade,
-          uf: data.uf,
-          ibge: data.ibge,
-          gia: data.gia,
-          ddd: data.ddd,
-          siafi: data.siafi
-        }
-      });
-    })
-    .catch(error => {
-      console.error('❌ Erro ao buscar CEP:', error);
-      res.status(500).json({
+  try {
+    // Busca na API do ViaCEP
+    const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+    const data = await response.json();
+    
+    if (data.erro) {
+      return res.status(404).json({
         success: false,
-        message: 'Erro ao buscar CEP'
+        message: 'CEP não encontrado'
       });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        cep: data.cep,
+        logradouro: data.logradouro,
+        complemento: data.complemento,
+        bairro: data.bairro,
+        localidade: data.localidade,
+        uf: data.uf,
+        ibge: data.ibge,
+        gia: data.gia,
+        ddd: data.ddd,
+        siafi: data.siafi
+      }
     });
+  } catch (error) {
+    console.error('❌ Erro ao buscar CEP:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar CEP'
+    });
+  }
 });
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({
     success: true,
     message: 'Backend funcionando!',
     timestamp: new Date().toISOString()
   });
+});
+
+// Rota de teste para upload de arquivos
+app.post('/api/upload-test', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nenhum arquivo enviado'
+      });
+    }
+
+    console.log('📁 Arquivo recebido:', req.file.originalname);
+    console.log('📊 Tamanho:', req.file.size);
+    console.log('🔧 Tipo:', req.file.mimetype);
+
+    // Fazer upload para S3
+    const uploadResult = await uploadFileToS3(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype,
+      'test-uploads'
+    );
+
+    if (uploadResult.success) {
+      console.log('✅ Upload realizado com sucesso!');
+      console.log('🔗 URL:', uploadResult.url);
+      console.log('🔑 Key:', uploadResult.key);
+      
+      res.json({
+        success: true,
+        message: 'Arquivo enviado com sucesso para S3!',
+        data: {
+          fileName: req.file.originalname,
+          url: uploadResult.url,
+          key: uploadResult.key,
+          size: req.file.size,
+          contentType: req.file.mimetype
+        }
+      });
+    } else {
+      console.error('❌ Erro no upload:', uploadResult.error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao fazer upload para S3',
+        error: uploadResult.error
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro na rota de upload:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno do servidor',
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+// Rota para servir o arquivo HTML de teste
+app.get('/test-upload.html', (req: Request, res: Response) => {
+  const htmlPath = path.join(__dirname, '../test-upload.html');
+  res.sendFile(htmlPath);
 });
 
 app.listen(PORT, () => {
