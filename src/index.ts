@@ -1,69 +1,89 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 
-// Import routes
-import apiRoutes from './routes';
-
-// Import middleware
-import { errorHandler } from './middleware/errorHandler';
-
-// Load environment variables
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = 3000;
 
-// Security middleware
-app.use(helmet());
-
-// CORS configuration
+// Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5176',
+  origin: ['http://localhost:5173', 'http://localhost:5176'],
   credentials: true,
 }));
+app.use(express.json());
 
-// Logging middleware
-app.use(morgan('combined'));
+// Pasta para salvar os dados (depois você substitui pelo S3)
+const dataDir = path.join(__dirname, '../data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Rota para salvar os dados do formulário
+app.post('/api/users', (req, res) => {
+  try {
+    const userData = {
+      id: Date.now().toString(), // ID simples baseado no timestamp
+      ...req.body,
+      createdAt: new Date().toISOString()
+    };
 
-// Static files for uploads
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+    // Salvar em arquivo JSON (depois você substitui pela integração com S3)
+    const fileName = `user_${userData.id}.json`;
+    const filePath = path.join(dataDir, fileName);
+    
+    fs.writeFileSync(filePath, JSON.stringify(userData, null, 2));
+    
+    console.log('✅ Dados salvos:', fileName);
+    
+    res.json({
+      success: true,
+      message: 'Dados salvos com sucesso!',
+      data: userData
+    });
+  } catch (error) {
+    console.error('❌ Erro ao salvar:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao salvar os dados'
+    });
+  }
+});
 
-// Health check endpoint
+// Rota para listar usuários salvos
+app.get('/api/users', (req, res) => {
+  try {
+    const files = fs.readdirSync(dataDir).filter(file => file.endsWith('.json'));
+    const users = files.map(file => {
+      const data = fs.readFileSync(path.join(dataDir, file), 'utf8');
+      return JSON.parse(data);
+    });
+
+    res.json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    console.error('❌ Erro ao listar:', error);
+    res.json({
+      success: true,
+      data: []
+    });
+  }
+});
+
+// Health check
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    message: 'Essencial Pay Backend is running',
-    timestamp: new Date().toISOString(),
+  res.json({
+    success: true,
+    message: 'Backend funcionando!',
+    timestamp: new Date().toISOString()
   });
 });
 
-// API Routes
-app.use('/api', apiRoutes);
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    message: `Route ${req.originalUrl} not found`,
-  });
-});
-
-// Error handling middleware (must be last)
-app.use(errorHandler);
-
-// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5176'}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`📁 Dados salvos em: ${dataDir}`);
 });
 
 export default app;
