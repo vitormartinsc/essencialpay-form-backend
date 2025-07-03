@@ -1,0 +1,18 @@
+{
+  "id": "1751551373833",
+  "fullName": "Teste Usu�rio",
+  "cpf": "123.456.789-10",
+  "email": "teste@email.com",
+  "phone": "(31) 99999-9999",
+  "cep": "30140-001",
+  "state": "MG",
+  "city": "Belo Horizonte",
+  "neighborhood": "Santa Efig�nia",
+  "street": "Avenida Brasil",
+  "number": "123",
+  "bankName": "Banco Teste",
+  "accountType": "corrente",
+  "agency": "1234",
+  "account": "56789-0",
+  "createdAt": "2025-07-03T14:02:53.833Z"
+}

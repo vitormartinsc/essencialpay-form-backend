@@ -1,7 +1,7 @@
-import express from 'express';
-import cors from 'cors';
-import fs from 'fs';
-import path from 'path';
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = 3000;
@@ -137,4 +137,4 @@ app.listen(PORT, () => {
   console.log(`📁 Dados salvos em: ${dataDir}`);
 });
 
-export default app;
+module.exports = app;
