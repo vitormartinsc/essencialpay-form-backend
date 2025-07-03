@@ -1,7 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 const multer = require('multer');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
@@ -26,12 +24,12 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limite
   },
   fileFilter: (req, file, cb) => {
-    // Aceitar apenas JPG, PNG e PDF
-    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+    // Aceitar apenas JPG, PNG, WEBP e PDF
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de arquivo não permitido. Apenas JPG, PNG e PDF são aceitos.'));
+      cb(new Error('Tipo de arquivo não permitido. Apenas JPG, PNG, WEBP e PDF são aceitos.'));
     }
   },
 });
@@ -41,19 +39,17 @@ const PORT = 8080;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5176', 'http://localhost:8080'],
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5176', 'http://localhost:8080'],
   credentials: true,
 }));
 app.use(express.json());
 
-// Pasta para salvar os dados (depois você substitui pelo S3)
-const dataDir = path.join(__dirname, '../data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
 // Rota para salvar os dados do formulário no PostgreSQL
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', upload.fields([
+  { name: 'documentFront', maxCount: 1 },
+  { name: 'documentBack', maxCount: 1 },
+  { name: 'residenceProof', maxCount: 1 }
+]), async (req, res) => {
   try {
     const { 
       fullName, 
@@ -71,7 +67,8 @@ app.post('/api/users', async (req, res) => {
       bankName,
       accountType,
       agency,
-      account
+      account,
+      documentType
     } = req.body;
     
     // Validações básicas
@@ -115,14 +112,94 @@ app.post('/api/users', async (req, res) => {
     
     console.log('✅ Usuário salvo com sucesso:', user.id);
     
+    // Processar arquivos se foram enviados
+    const uploadedDocuments = [];
+    
+    if (req.files) {
+      console.log('📤 Processando arquivos...');
+      
+      // Função para fazer upload de um arquivo
+      const uploadFile = async (file, documentType) => {
+        if (!file) return null;
+        
+        try {
+          const fileExtension = file.originalname.split('.').pop();
+          const uniqueFileName = `documents/${user.id}/${documentType}_${uuidv4()}.${fileExtension}`;
+
+          // Comando para upload no S3
+          const command = new PutObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: uniqueFileName,
+            Body: file.buffer,
+            ContentType: file.mimetype,
+            ACL: 'private',
+          });
+
+          // Enviar para S3
+          await s3Client.send(command);
+
+          // URL do arquivo no S3
+          const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_S3_REGION_NAME}.amazonaws.com/${uniqueFileName}`;
+
+          // Salvar informações do documento no PostgreSQL
+          const docQuery = `
+            INSERT INTO user_documents (user_id, document_type, file_name, file_url, file_key, file_size, content_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
+          `;
+          
+          const docValues = [
+            user.id,
+            documentType,
+            file.originalname,
+            fileUrl,
+            uniqueFileName,
+            file.size,
+            file.mimetype
+          ];
+          
+          const docResult = await pool.query(docQuery, docValues);
+          
+          console.log(`✅ Documento ${documentType} salvo:`, docResult.rows[0].id);
+          
+          return {
+            id: docResult.rows[0].id,
+            type: documentType,
+            fileName: file.originalname,
+            url: fileUrl
+          };
+        } catch (error) {
+          console.error(`❌ Erro ao fazer upload do ${documentType}:`, error);
+          return null;
+        }
+      };
+
+      // Processar cada tipo de documento
+      if (req.files.documentFront) {
+        const doc = await uploadFile(req.files.documentFront[0], 'document_front');
+        if (doc) uploadedDocuments.push(doc);
+      }
+      
+      if (req.files.documentBack) {
+        const doc = await uploadFile(req.files.documentBack[0], 'document_back');
+        if (doc) uploadedDocuments.push(doc);
+      }
+      
+      if (req.files.residenceProof) {
+        const doc = await uploadFile(req.files.residenceProof[0], 'residence_proof');
+        if (doc) uploadedDocuments.push(doc);
+      }
+    }
+    
     res.json({
       success: true,
-      message: 'Usuário salvo com sucesso no PostgreSQL!',
+      message: 'Usuário e documentos salvos com sucesso!',
       data: {
         id: user.id,
         nome: user.nome,
         email: user.email,
-        created_at: user.created_at
+        created_at: user.created_at,
+        documents: uploadedDocuments
       }
     });
     
@@ -225,143 +302,6 @@ app.get('/api/cep/:cep', (req, res) => {
     });
 });
 
-// Rota para upload de documentos do frontend para S3 e PostgreSQL
-app.post('/api/upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nenhum arquivo foi enviado'
-      });
-    }
-
-    console.log('📤 Upload de documento recebido:', req.file.originalname);
-    
-    // Gerar nome único para o arquivo
-    const fileExtension = req.file.originalname.split('.').pop();
-    const uniqueFileName = `documents/${uuidv4()}.${fileExtension}`;
-
-    // Comando para upload no S3
-    const command = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: uniqueFileName,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'private', // Arquivo privado por segurança
-    });
-
-    // Enviar para S3
-    await s3Client.send(command);
-
-    // URL do arquivo no S3
-    const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_S3_REGION_NAME}.amazonaws.com/${uniqueFileName}`;
-
-    console.log('✅ Upload realizado com sucesso:', fileUrl);
-
-    // Salvar informações do documento no PostgreSQL
-    try {
-      const query = `
-        INSERT INTO user_documents (user_id, document_type, file_name, file_url, file_key, file_size, content_type)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id
-      `;
-      
-      const values = [
-        null, // user_id será definido posteriormente quando associar ao usuário
-        'document',
-        req.file.originalname,
-        fileUrl,
-        uniqueFileName,
-        req.file.size,
-        req.file.mimetype
-      ];
-      
-      const result = await pool.query(query, values);
-      console.log('📝 Documento salvo no PostgreSQL:', result.rows[0].id);
-    } catch (dbError) {
-      console.warn('⚠️  Erro ao salvar no PostgreSQL (não crítico):', dbError.message);
-    }
-
-    res.json({
-      success: true,
-      message: 'Documento enviado com sucesso! 🎉',
-      data: {
-        fileName: req.file.originalname,
-        size: req.file.size,
-        contentType: req.file.mimetype,
-        url: fileUrl,
-        key: uniqueFileName
-      }
-    });
-  } catch (error) {
-    console.error('❌ Erro no upload:', error);
-    res.status(500).json({
-      success: false,
-      message: `Erro ao fazer upload: ${error.message}`
-    });
-  }
-});
-
-// Rota para upload de teste (mantém compatibilidade com test-upload.html)
-app.post('/api/upload-test', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nenhum arquivo foi enviado'
-      });
-    }
-
-    console.log('📤 Upload de teste recebido:', req.file.originalname);
-    
-    // Gerar nome único para o arquivo
-    const fileExtension = req.file.originalname.split('.').pop();
-    const uniqueFileName = `test-uploads/${uuidv4()}.${fileExtension}`;
-
-    // Comando para upload no S3
-    const command = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: uniqueFileName,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'private', // Arquivo privado por segurança
-    });
-
-    // Enviar para S3
-    await s3Client.send(command);
-
-    // URL do arquivo no S3
-    const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_S3_REGION_NAME}.amazonaws.com/${uniqueFileName}`;
-
-    console.log('✅ Upload de teste realizado com sucesso:', fileUrl);
-
-    res.json({
-      success: true,
-      message: 'Upload de teste realizado com sucesso no AWS S3! 🎉',
-      data: {
-        fileName: req.file.originalname,
-        size: req.file.size,
-        contentType: req.file.mimetype,
-        url: fileUrl,
-        key: uniqueFileName
-      }
-    });
-  } catch (error) {
-    console.error('❌ Erro no upload de teste:', error);
-    res.status(500).json({
-      success: false,
-      message: `Erro ao fazer upload de teste: ${error.message}`
-    });
-  }
-});
-
-// Rota para servir o arquivo de teste HTML
-app.get('/test-upload.html', (req, res) => {
-  const filePath = path.join(__dirname, '../test-upload.html');
-  console.log('📄 Servindo arquivo de teste:', filePath);
-  res.sendFile(filePath);
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -373,7 +313,7 @@ app.get('/health', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📁 Dados salvos em: ${dataDir}`);
+  console.log(`�️  Conectado ao PostgreSQL e AWS S3`);
 });
 
 module.exports = app;
