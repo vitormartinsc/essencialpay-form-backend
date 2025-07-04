@@ -1,56 +1,82 @@
-const pool = require('./database');
+const pool = require('./src/config/database');
 
 async function initDatabase() {
   try {
-    console.log('🗃️  Inicializando banco de dados...');
-    
-    // Criar tabela users
-    await pool.query(`
+    console.log('🗄️  Inicializando banco de dados...');
+
+    // Criar tabela de usuários
+    const createUsersTable = `
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         nome VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        cpf VARCHAR(14) UNIQUE NOT NULL,
-        cnpj VARCHAR(18),
-        telefone VARCHAR(20) NOT NULL,
-        cep VARCHAR(9) NOT NULL,
-        logradouro VARCHAR(255) NOT NULL,
-        numero VARCHAR(10) NOT NULL,
-        complemento VARCHAR(255),
-        bairro VARCHAR(255) NOT NULL,
-        cidade VARCHAR(255) NOT NULL,
-        estado VARCHAR(2) NOT NULL,
-        bank_name VARCHAR(255),
-        account_type VARCHAR(50),
-        agency VARCHAR(20),
-        account VARCHAR(50),
+        email VARCHAR(255) NOT NULL,
+        telefone VARCHAR(20),
+        cpf VARCHAR(14) UNIQUE,
+        cep VARCHAR(9),
+        endereco TEXT,
+        numero VARCHAR(10),
+        bairro VARCHAR(100),
+        cidade VARCHAR(100),
+        estado VARCHAR(2),
+        complemento TEXT,
+        data_nascimento DATE,
+        documento_identidade_frente_url TEXT,
+        documento_identidade_verso_url TEXT,
+        documento_cnh_url TEXT,
+        documento_comprovante_residencia_url TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Criar tabela user_documents para armazenar documentos
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_documents (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        document_type VARCHAR(50) NOT NULL,
-        file_name VARCHAR(255) NOT NULL,
-        file_url VARCHAR(500) NOT NULL,
-        file_key VARCHAR(255) NOT NULL,
-        file_size INTEGER NOT NULL,
-        content_type VARCHAR(100) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    console.log('✅ Tabelas criadas com sucesso!');
-    console.log('📊 Tabelas: users, user_documents');
+      );
+    `;
+
+    await pool.query(createUsersTable);
+    console.log('✅ Tabela users criada/verificada');
+
+    // Criar índices para melhor performance
+    const createIndexes = [
+      'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);',
+      'CREATE INDEX IF NOT EXISTS idx_users_cpf ON users(cpf);',
+      'CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);'
+    ];
+
+    for (const index of createIndexes) {
+      await pool.query(index);
+    }
+    console.log('✅ Índices criados/verificados');
+
+    // Criar função para atualizar updated_at automaticamente
+    const createUpdateFunction = `
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          NEW.updated_at = CURRENT_TIMESTAMP;
+          RETURN NEW;
+      END;
+      $$ language 'plpgsql';
+    `;
+
+    await pool.query(createUpdateFunction);
+    console.log('✅ Função de atualização criada');
+
+    // Criar trigger para atualizar updated_at
+    const createTrigger = `
+      DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+      CREATE TRIGGER update_users_updated_at
+          BEFORE UPDATE ON users
+          FOR EACH ROW
+          EXECUTE FUNCTION update_updated_at_column();
+    `;
+
+    await pool.query(createTrigger);
+    console.log('✅ Trigger de atualização criado');
+
+    console.log('🎉 Banco de dados inicializado com sucesso!');
     
   } catch (error) {
     console.error('❌ Erro ao inicializar banco:', error);
   } finally {
     await pool.end();
+    process.exit(0);
   }
 }
 
