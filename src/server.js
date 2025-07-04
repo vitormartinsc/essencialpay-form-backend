@@ -4,6 +4,7 @@ const multer = require('multer');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('./config/database');
+const { updateKommoLeadWithPersonalData } = require('./utils/kommo');
 require('dotenv').config();
 
 // Configuração do AWS S3
@@ -122,6 +123,43 @@ app.post('/api/users', upload.fields([
     const user = result.rows[0];
     
     console.log('✅ Usuário salvo com sucesso:', user.id);
+    
+    // Atualizar dados no Kommo
+    try {
+      console.log('🔄 Atualizando dados no Kommo...');
+      await updateKommoLeadWithPersonalData({
+        fullName: fullName,
+        nome: fullName,
+        email: email,
+        phone: phone,
+        telefone: phone,
+        cpf: cpf,
+        cnpj: cnpj,
+        cep: cep,
+        street: street,
+        logradouro: street,
+        number: number,
+        numero: number,
+        complement: complement,
+        complemento: complement,
+        neighborhood: neighborhood,
+        bairro: neighborhood,
+        city: city,
+        cidade: city,
+        state: state,
+        estado: state,
+        bankName: bankName,
+        bank_name: bankName,
+        accountType: accountType,
+        account_type: accountType,
+        agency: agency,
+        account: account,
+        documentType: documentType
+      });
+    } catch (kommoError) {
+      console.error('⚠️ Erro ao atualizar dados no Kommo (não crítico):', kommoError.message);
+      // Não falha a operação se o Kommo falhar
+    }
     
     // Processar arquivos se foram enviados
     const uploadedDocuments = [];
@@ -333,8 +371,66 @@ app.get('/debug/env', (req, res) => {
       CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
       hasDatabase: !!process.env.DATABASE_URL,
       hasAWS: !!process.env.AWS_ACCESS_KEY_ID,
+      kommoEnabled: process.env.KOMMO_ENABLED === 'true',
+      hasKommoToken: !!process.env.KOMMO_ACCESS_TOKEN,
     }
   });
+});
+
+// Endpoint para testar a integração com Kommo
+app.post('/debug/test-kommo', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Telefone é obrigatório para teste'
+      });
+    }
+    
+    console.log('🧪 Testando integração com Kommo para telefone:', phone);
+    
+    const testData = {
+      fullName: 'Teste de Integração',
+      nome: 'Teste de Integração',
+      email: 'teste@exemplo.com',
+      phone: phone,
+      telefone: phone,
+      cpf: '12345678901',
+      cnpj: '12345678000195',
+      cep: '01234567',
+      street: 'Rua de Teste',
+      number: '123',
+      complement: 'Sala 1',
+      neighborhood: 'Centro',
+      city: 'São Paulo',
+      state: 'SP',
+      bankName: 'Banco de Teste',
+      accountType: 'Conta Corrente',
+      agency: '1234',
+      account: '56789-0',
+      documentType: 'RG'
+    };
+    
+    await updateKommoLeadWithPersonalData(testData);
+    
+    res.json({
+      success: true,
+      message: 'Teste de integração com Kommo executado com sucesso!',
+      data: {
+        phone: phone,
+        testData: testData
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro no teste do Kommo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro no teste do Kommo: ' + error.message
+    });
+  }
 });
 
 app.listen(PORT, () => {
