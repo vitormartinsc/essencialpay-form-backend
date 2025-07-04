@@ -1,16 +1,31 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Carregar .env.local em desenvolvimento
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config({ path: '.env.local' });
+} else {
+  dotenv.config();
+}
 
 // Configurações do Kommo
 const KOMMO_ENABLED = process.env.KOMMO_ENABLED === 'true';
 const KOMMO_ACCESS_TOKEN = process.env.KOMMO_ACCESS_TOKEN;
 const KOMMO_BASE_URL = 'https://essencialsolutions.kommo.com';
 
+console.log('🔧 Kommo Config:');
+console.log('- KOMMO_ENABLED:', KOMMO_ENABLED);
+console.log('- Has TOKEN:', !!KOMMO_ACCESS_TOKEN);
+
 const KOMMO_HEADERS = {
   'Authorization': `Bearer ${KOMMO_ACCESS_TOKEN}`,
   'Content-Type': 'application/json'
+};
+
+// Configuração do axios com timeout
+const AXIOS_CONFIG = {
+  timeout: 10000, // 10 segundos
+  headers: KOMMO_HEADERS
 };
 
 // IDs dos campos customizados do CONTATO
@@ -20,10 +35,18 @@ const KOMMO_FIELDS_CONTACT = {
   cpf: 1064648,       // CPF/CNPJ
 };
 
+// IDs dos campos customizados da EMPRESA
+const KOMMO_FIELDS_COMPANY = {
+  cnpj: 1063367,      // CNPJ
+};
+
 // IDs dos campos customizados do LEAD
 const KOMMO_FIELDS_LEAD = {
   limite_disponivel: 1051320,
   valor_emprestimo: 1064640,
+  banco: 1065798,     // Banco
+  agencia: 1065800,   // Agência
+  conta: 1065802,     // Conta
 };
 
 // Interfaces TypeScript
@@ -63,10 +86,15 @@ interface KommoContact {
   id: number;
   _embedded?: {
     leads?: KommoLead[];
+    companies?: KommoCompany[];
   };
 }
 
 interface KommoLead {
+  id: number;
+}
+
+interface KommoCompany {
   id: number;
 }
 
@@ -81,8 +109,8 @@ interface KommoResponse {
  */
 async function searchContactByPhone(phoneNumber: string): Promise<KommoContact[] | null> {
   try {
-    const searchContactUrl = `${KOMMO_BASE_URL}/api/v4/contacts?query=${phoneNumber}&with=leads`;
-    const response = await axios.get<KommoResponse>(searchContactUrl, { headers: KOMMO_HEADERS });
+    const searchContactUrl = `${KOMMO_BASE_URL}/api/v4/contacts?query=${phoneNumber}&with=leads,companies`;
+    const response = await axios.get<KommoResponse>(searchContactUrl, AXIOS_CONFIG);
     
     if (response.status !== 200) {
       return null;
@@ -142,17 +170,26 @@ export async function updateKommoLeadWithPersonalData(userData: UserData): Promi
       return;
     }
     
-    const contact = contacts[0];
-    const contactId = contact.id;
+    // Procurar por um contato que tenha leads
+    let selectedContact: KommoContact | null = null;
+    let leadId: number | null = null;
     
-    // Buscar o lead associado ao contato
-    const leads = contact._embedded?.leads || [];
-    if (leads.length === 0) {
-      console.log('Nenhum lead encontrado para o contato');
+    for (const contact of contacts) {
+      const leads = contact._embedded?.leads || [];
+      if (leads.length > 0) {
+        selectedContact = contact;
+        leadId = leads[0].id; // Pega o primeiro lead do contato
+        console.log(`Contato encontrado: ${contact.id} com ${leads.length} lead(s)`);
+        break;
+      }
+    }
+    
+    if (!selectedContact || !leadId) {
+      console.log(`Nenhum contato com leads encontrado entre ${contacts.length} contato(s) retornados`);
       return;
     }
     
-    const leadId = leads[0].id;
+    const contactId = selectedContact.id;
     
     console.log(`Atualizando contato ${contactId} e lead ${leadId} no Kommo`);
     
@@ -166,17 +203,39 @@ export async function updateKommoLeadWithPersonalData(userData: UserData): Promi
       ]
     };
     
-    // Adicionar CNPJ se existir (usando mesmo campo do CPF)
-    if (userData.cnpj) {
-      contactPayload.custom_fields_values.push(
-        { field_id: KOMMO_FIELDS_CONTACT.cpf, values: [{ value: userData.cnpj }] }
-      );
+    const updateContactUrl = `${KOMMO_BASE_URL}/api/v4/contacts/${contactId}`;
+    await axios.patch(updateContactUrl, contactPayload, AXIOS_CONFIG);
+    console.log(`✅ Contato ${contactId} atualizado no Kommo`);
+    
+    // 3. Atualizar a empresa se CNPJ fornecido
+    if (userData.cnpj && selectedContact._embedded?.companies && selectedContact._embedded.companies.length > 0) {
+      try {
+        const companyId = selectedContact._embedded.companies[0].id;
+        
+        // Converter CNPJ para número (removendo caracteres especiais)
+        const cnpjNumerico = userData.cnpj.replace(/\D/g, '');
+        
+        const companyPayload = {
+          custom_fields_values: [
+            { field_id: KOMMO_FIELDS_COMPANY.cnpj, values: [{ value: parseInt(cnpjNumerico, 10) }] }
+          ]
+        };
+        
+        console.log(`Atualizando empresa ${companyId} com CNPJ: ${cnpjNumerico}`);
+        const updateCompanyUrl = `${KOMMO_BASE_URL}/api/v4/companies/${companyId}`;
+        await axios.patch(updateCompanyUrl, companyPayload, AXIOS_CONFIG);
+        console.log(`✅ Empresa ${companyId} atualizada com CNPJ no Kommo`);
+      } catch (companyError) {
+        console.error('❌ Erro ao atualizar empresa no Kommo:', companyError instanceof Error ? companyError.message : 'Erro desconhecido');
+        if (companyError && typeof companyError === 'object' && 'response' in companyError) {
+          const axiosError = companyError as any;
+          console.error('Company update - Response status:', axiosError.response?.status);
+          console.error('Company update - Response data:', JSON.stringify(axiosError.response?.data, null, 2));
+        }
+      }
     }
     
-    const updateContactUrl = `${KOMMO_BASE_URL}/api/v4/contacts/${contactId}`;
-    await axios.patch(updateContactUrl, contactPayload, { headers: KOMMO_HEADERS });
-    
-    // 3. Atualizar o lead com dados adicionais se fornecidos
+    // 4. Atualizar o lead com dados adicionais se fornecidos
     const leadFields = [];
     
     if (userData.limite_disponivel) {
@@ -193,11 +252,35 @@ export async function updateKommoLeadWithPersonalData(userData: UserData): Promi
       });
     }
     
+    // Novos campos bancários
+    const bankName = userData.bankName || userData.bank_name;
+    if (bankName) {
+      leadFields.push({ 
+        field_id: KOMMO_FIELDS_LEAD.banco, 
+        values: [{ value: bankName }] 
+      });
+    }
+    
+    if (userData.agency) {
+      leadFields.push({ 
+        field_id: KOMMO_FIELDS_LEAD.agencia, 
+        values: [{ value: userData.agency }] 
+      });
+    }
+    
+    if (userData.account) {
+      leadFields.push({ 
+        field_id: KOMMO_FIELDS_LEAD.conta, 
+        values: [{ value: userData.account }] 
+      });
+    }
+    
     if (leadFields.length > 0) {
       const leadPayload = { custom_fields_values: leadFields };
       
       const updateLeadUrl = `${KOMMO_BASE_URL}/api/v4/leads/${leadId}`;
-      await axios.patch(updateLeadUrl, leadPayload, { headers: KOMMO_HEADERS });
+      await axios.patch(updateLeadUrl, leadPayload, AXIOS_CONFIG);
+      console.log(`✅ Lead ${leadId} atualizado com ${leadFields.length} campo(s) customizado(s)`);
     }
     
     console.log('✅ Dados pessoais atualizados no Kommo com sucesso');
