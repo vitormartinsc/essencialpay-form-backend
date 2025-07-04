@@ -7,7 +7,16 @@ import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
 
-dotenv.config();
+// 🔧 FORÇAR carregamento do .env.local em desenvolvimento
+dotenv.config({ path: '.env.local' });
+
+// 🚨 FORÇAR DATABASE_URL para desenvolvimento local
+if (process.env.NODE_ENV !== 'production') {
+  process.env.DATABASE_URL = 'postgresql://postgres:LZIjjUhtSyUllFmChEPrImDOuOOwFtkI@hopper.proxy.rlwy.net:57099/railway';
+}
+
+console.log('🔍 DATABASE_URL:', process.env.DATABASE_URL?.includes('railway.internal') ? 'ERRO: Usando URL interna!' : 'OK: Usando URL externa');
+console.log('🔗 URL do banco:', process.env.DATABASE_URL?.substring(0, 50) + '...');
 
 // Configuração do AWS S3
 const s3Client = new S3Client({
@@ -379,62 +388,6 @@ app.get('/api/cep/:cep', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Erro ao buscar CEP'
-    });
-  }
-});
-
-// Endpoint para testar a integração com Kommo
-app.post('/debug/test-kommo', async (req: Request, res: Response) => {
-  try {
-    const { phone } = req.body;
-    
-    if (!phone) {
-      return res.status(400).json({
-        success: false,
-        message: 'Telefone é obrigatório para teste'
-      });
-    }
-    
-    console.log('🧪 Testando integração com Kommo para telefone:', phone);
-    
-    const testData: UserData = {
-      fullName: 'Teste de Integração',
-      nome: 'Teste de Integração',
-      email: 'teste@exemplo.com',
-      phone: phone,
-      telefone: phone,
-      cpf: '12345678901',
-      cnpj: '12345678000195',
-      cep: '01234567',
-      street: 'Rua de Teste',
-      number: '123',
-      complement: 'Sala 1',
-      neighborhood: 'Centro',
-      city: 'São Paulo',
-      state: 'SP',
-      bankName: 'Banco de Teste',
-      accountType: 'Conta Corrente',
-      agency: '1234',
-      account: '56789-0',
-      documentType: 'RG'
-    };
-    
-    await updateKommoLeadWithPersonalData(testData);
-    
-    res.json({
-      success: true,
-      message: 'Teste de integração com Kommo executado com sucesso!',
-      data: {
-        phone: phone,
-        testData: testData
-      }
-    });
-    
-  } catch (error) {
-    console.error('❌ Erro no teste do Kommo:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro no teste do Kommo: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
     });
   }
 });
