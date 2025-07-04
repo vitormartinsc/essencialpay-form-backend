@@ -7,8 +7,8 @@ import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
 
-// 🔧 FORÇAR carregamento do .env.local em desenvolvimento
-dotenv.config({ path: '.env.local' });
+// Carregar variáveis de ambiente do arquivo .env
+dotenv.config({ path: '.env' });
 
 // 🚨 FORÇAR DATABASE_URL para desenvolvimento local
 if (process.env.NODE_ENV !== 'production') {
