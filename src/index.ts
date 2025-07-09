@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
+import DriveUploadService from './utils/driveUpload';
 
 // Carregar variáveis de ambiente do arquivo .env
 dotenv.config({ path: '.env' });
@@ -28,6 +29,9 @@ const s3Client = new S3Client({
 });
 
 const BUCKET_NAME = process.env.AWS_STORAGE_BUCKET_NAME || 'essencial-form-files';
+
+// Inicializar serviço do Google Drive
+const driveService = new DriveUploadService();
 
 // Configuração do PostgreSQL
 const pool = new Pool({
@@ -202,13 +206,59 @@ app.post('/api/users', upload.fields([
     
     // Processar arquivos se foram enviados
     const uploadedDocuments: any[] = [];
+    const driveDocuments: any[] = [];
     
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (files) {
       console.log('📤 Processando arquivos...');
       
-      // Função para fazer upload de um arquivo
+      // Preparar arquivos para upload no Google Drive
+      const driveFiles: { [key: string]: any } = {};
+      
+      // Converter arquivos para formato do Drive
+      if (files.documentFront) {
+        driveFiles.document_front = {
+          buffer: files.documentFront[0].buffer,
+          originalName: files.documentFront[0].originalname,
+          mimeType: files.documentFront[0].mimetype,
+        };
+      }
+      
+      if (files.documentBack) {
+        driveFiles.document_back = {
+          buffer: files.documentBack[0].buffer,
+          originalName: files.documentBack[0].originalname,
+          mimeType: files.documentBack[0].mimetype,
+        };
+      }
+      
+      if (files.residenceProof) {
+        driveFiles.residence_proof = {
+          buffer: files.residenceProof[0].buffer,
+          originalName: files.residenceProof[0].originalname,
+          mimeType: files.residenceProof[0].mimetype,
+        };
+      }
+
+      // Upload para Google Drive (se configurado)
+      if (driveService.isConfigured() && Object.keys(driveFiles).length > 0) {
+        try {
+          console.log('☁️ Fazendo upload para Google Drive...');
+          const driveUploads = await driveService.uploadDocuments(driveFiles, {
+            fullName: fullName,
+            email: email,
+            cpf: cpf,
+          });
+          driveDocuments.push(...driveUploads);
+          console.log(`✅ ${driveUploads.length} arquivos enviados para o Drive`);
+        } catch (driveError) {
+          console.error('⚠️ Erro ao enviar para Google Drive (não crítico):', driveError);
+          // Não falha a operação se o Drive falhar
+        }
+      }
+      
+      // Função para fazer upload de um arquivo no S3
       const uploadFile = async (file: Express.Multer.File, documentType: string) => {
         if (!file) return null;
         
@@ -289,7 +339,8 @@ app.post('/api/users', upload.fields([
         nome: user.nome,
         email: user.email,
         created_at: user.created_at,
-        documents: uploadedDocuments
+        documents: uploadedDocuments,
+        driveDocuments: driveDocuments // Adicionar documentos do Drive
       }
     });
     
