@@ -97,6 +97,7 @@ app.use(express.json());
 app.post('/api/users', upload.fields([
   { name: 'documentFront', maxCount: 1 },
   { name: 'documentBack', maxCount: 1 },
+  { name: 'selfie', maxCount: 1 },
   { name: 'residenceProof', maxCount: 1 }
 ]), async (req: Request, res: Response) => {
   try {
@@ -206,7 +207,7 @@ app.post('/api/users', upload.fields([
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (files) {
-      console.log('📤 Processando arquivos...');
+      console.log('📤 Processando arquivos (documento frente, verso, selfie e comprovante de residência)...');
       
       // Função para fazer upload de um arquivo
       const uploadFile = async (file: Express.Multer.File, documentType: string) => {
@@ -272,6 +273,11 @@ app.post('/api/users', upload.fields([
       
       if (files.documentBack) {
         const doc = await uploadFile(files.documentBack[0], 'document_back');
+        if (doc) uploadedDocuments.push(doc);
+      }
+      
+      if (files.selfie) {
+        const doc = await uploadFile(files.selfie[0], 'selfie');
         if (doc) uploadedDocuments.push(doc);
       }
       
