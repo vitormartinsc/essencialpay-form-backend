@@ -54,24 +54,26 @@ const upload = multer({
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Interface para dados do usuário
+// Interface para dados do usuário - celular e dados bancários obrigatórios
 interface UserFormData {
-  fullName: string;
-  email: string;
-  cpf: string;
-  phone: string;
-  cep: string;
-  street: string;
-  number: string;
+  fullName?: string;
+  email?: string;
+  cpf?: string;
+  phone: string; // Obrigatório
+  cep?: string;
+  street?: string;
+  number?: string;
   complement?: string;
-  neighborhood: string;
-  city: string;
-  state: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
   cnpj?: string;
-  bankName?: string;
-  accountType?: string;
-  agency?: string;
-  account?: string;
+  // Dados bancários obrigatórios
+  bankName: string;
+  accountType: string;
+  agency: string;
+  account: string;
+  // Documentos opcionais
   documentType?: string;
 }
 
@@ -121,17 +123,39 @@ app.post('/api/users', upload.fields([
       documentType
     }: UserFormData = req.body;
     
-    // Validações básicas
-    if (!fullName || !email || !cpf || !phone || !cep || !street || !number || !neighborhood || !city || !state) {
+    // Validações básicas - celular, nome e dados bancários são obrigatórios
+    if (!phone) {
       return res.status(400).json({
         success: false,
-        message: 'Todos os campos obrigatórios devem ser preenchidos'
+        message: 'Celular é obrigatório'
+      });
+    }
+    
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome completo é obrigatório'
+      });
+    }
+    
+    if (!bankName || !accountType || !agency || !account) {
+      return res.status(400).json({
+        success: false,
+        message: 'Dados bancários são obrigatórios: nome do banco, tipo de conta, agência e conta'
       });
     }
 
-    console.log('💾 Salvando usuário no PostgreSQL:', email);
+    // Validar tipo de documento se fornecido
+    if (documentType && !['RG', 'CNH'].includes(documentType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tipo de documento deve ser RG ou CNH'
+      });
+    }
+
+    console.log('💾 Salvando dados bancários no PostgreSQL');
     
-    // Inserir usuário no banco
+    // Inserir dados no banco - campos pessoais e de endereço opcionais
     const query = `
       INSERT INTO users (nome, email, cpf, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, estado, bank_name, account_type, agency, account)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
@@ -139,53 +163,53 @@ app.post('/api/users', upload.fields([
     `;
     
     const values = [
-      fullName,        // nome
-      email,           // email
-      cpf,             // cpf
-      cnpj || null,    // cnpj (opcional)
-      phone,           // telefone
-      cep,             // cep
-      street,          // logradouro
-      number,          // numero
-      complement || '', // complemento
-      neighborhood,    // bairro
-      city,            // cidade
-      state,           // estado
-      bankName || null,     // bank_name
-      accountType || null,  // account_type
-      agency || null,       // agency
-      account || null       // account
+      fullName,             // nome (obrigatório)
+      email || null,        // email (opcional)
+      cpf || null,          // cpf (opcional)
+      cnpj || null,         // cnpj (opcional)
+      phone,                // telefone (obrigatório)
+      cep || null,          // cep (opcional)
+      street || null,       // logradouro (opcional)
+      number || null,       // numero (opcional)
+      complement || null,   // complemento (opcional)
+      neighborhood || null, // bairro (opcional)
+      city || null,         // cidade (opcional)
+      state || null,        // estado (opcional)
+      bankName,             // bank_name (obrigatório)
+      accountType,          // account_type (obrigatório)
+      agency,               // agency (obrigatório)
+      account               // account (obrigatório)
     ];
     
     const result = await pool.query(query, values);
     const user = result.rows[0];
     
-    console.log('✅ Usuário salvo com sucesso:', user.id);
+    console.log('✅ Dados bancários salvos com sucesso:', user.id);
     
-    // Atualizar dados no Kommo
+    // Atualizar dados no Kommo (sempre executar já que celular é obrigatório)
     try {
       console.log('🔄 Atualizando dados no Kommo...');
       const userData: UserData = {
-        fullName: fullName,
-        nome: fullName,
-        email: email,
+        fullName: fullName || '',
+        nome: fullName || '',
+        email: email || '',
         phone: phone,
         telefone: phone,
-        cpf: cpf,
-        cnpj: cnpj,
-        cep: cep,
-        street: street,
-        logradouro: street,
-        number: number,
-        numero: number,
-        complement: complement,
-        complemento: complement,
-        neighborhood: neighborhood,
-        bairro: neighborhood,
-        city: city,
-        cidade: city,
-        state: state,
-        estado: state,
+        cpf: cpf || '',
+        cnpj: cnpj || '',
+        cep: cep || '',
+        street: street || '',
+        logradouro: street || '',
+        number: number || '',
+        numero: number || '',
+        complement: complement || '',
+        complemento: complement || '',
+        neighborhood: neighborhood || '',
+        bairro: neighborhood || '',
+        city: city || '',
+        cidade: city || '',
+        state: state || '',
+        estado: state || '',
         bankName: bankName,
         bank_name: bankName,
         accountType: accountType,
@@ -289,7 +313,7 @@ app.post('/api/users', upload.fields([
     
     res.json({
       success: true,
-      message: 'Usuário e documentos salvos com sucesso!',
+      message: 'Celular, dados bancários e documentos salvos com sucesso!',
       data: {
         id: user.id,
         nome: user.nome,
@@ -302,17 +326,17 @@ app.post('/api/users', upload.fields([
   } catch (error) {
     console.error('❌ Erro ao salvar usuário:', error);
     
-    // Verificar se é erro de duplicação (email ou CPF já existem)
+    // Verificar se é erro de duplicação (CPF já existe, se fornecido)
     if (error instanceof Error && 'code' in error && error.code === '23505') {
       return res.status(409).json({
         success: false,
-        message: 'Email ou CPF já cadastrado'
+        message: 'CPF já cadastrado'
       });
     }
     
     res.status(500).json({
       success: false,
-      message: 'Erro ao salvar usuário: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
+      message: 'Erro ao salvar dados: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
     });
   }
 });
