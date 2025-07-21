@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
 import { uploadFile } from './utils/fileUpload';
 import { whatsappNotifier } from './utils/whatsapp';
+import { getUserFolderUrl } from './utils/folderHelper';
 
 // Carregar variáveis de ambiente do arquivo .env
 dotenv.config({ path: '.env' });
@@ -231,40 +232,86 @@ app.post('/api/users', upload.fields([
     
     // Processar arquivos se foram enviados
     const uploadedDocuments: any[] = [];
+    let userFolderUrl: string | undefined;
+    
+    // Preparar dados do usuário para a estrutura de pastas no Google Drive
+    const userDataForUpload = {
+      state: state || 'XX',
+      fullName: fullName || 'Usuario',
+      cpf: cpf || '',
+      cnpj: cnpj || '',
+      accountCategory: accountCategory || ''
+    };
     
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (files) {
       console.log('📤 Processando arquivos (documento frente, verso, selfie e comprovante de residência)...');
-      
-      // Preparar dados do usuário para a estrutura de pastas no Google Drive
-      const userDataForUpload = {
-        state: state || 'XX',
-        fullName: fullName || 'Usuario',
-        cpf: cpf || '',
-        cnpj: cnpj || '',
-        accountCategory: accountCategory || ''
-      };
 
       // Processar cada tipo de documento
       if (files.documentFront) {
         const doc = await uploadFile(files.documentFront[0], user.id, 'document_front', pool, userDataForUpload);
-        if (doc) uploadedDocuments.push(doc);
+        if (doc) {
+          uploadedDocuments.push(doc);
+          // Capturar o URL da pasta do primeiro documento uploaded
+          if (!userFolderUrl && doc.userFolderUrl) {
+            userFolderUrl = doc.userFolderUrl;
+            console.log('📁 URL da pasta capturado:', userFolderUrl);
+          }
+        }
       }
       
       if (files.documentBack) {
         const doc = await uploadFile(files.documentBack[0], user.id, 'document_back', pool, userDataForUpload);
-        if (doc) uploadedDocuments.push(doc);
+        if (doc) {
+          uploadedDocuments.push(doc);
+          if (!userFolderUrl && doc.userFolderUrl) {
+            userFolderUrl = doc.userFolderUrl;
+          }
+        }
       }
       
       if (files.selfie) {
         const doc = await uploadFile(files.selfie[0], user.id, 'selfie', pool, userDataForUpload);
-        if (doc) uploadedDocuments.push(doc);
+        if (doc) {
+          uploadedDocuments.push(doc);
+          if (!userFolderUrl && doc.userFolderUrl) {
+            userFolderUrl = doc.userFolderUrl;
+          }
+        }
       }
       
       if (files.residenceProof) {
         const doc = await uploadFile(files.residenceProof[0], user.id, 'residence_proof', pool, userDataForUpload);
-        if (doc) uploadedDocuments.push(doc);
+        if (doc) {
+          uploadedDocuments.push(doc);
+          if (!userFolderUrl && doc.userFolderUrl) {
+            userFolderUrl = doc.userFolderUrl;
+          }
+        }
+      }
+    }
+    
+    // Se não temos URL da pasta (nenhum documento foi enviado), mas o Google Drive está habilitado,
+    // vamos criar uma pasta vazia para ter o link
+    if (!userFolderUrl && process.env.GOOGLE_DRIVE_ENABLED === 'true') {
+      try {
+        console.log('📁 Criando pasta no Google Drive mesmo sem documentos...');
+        const folderUrl = await getUserFolderUrl({
+          userId: user.id,
+          state: state || 'XX',
+          fullName: fullName || 'Usuario',
+          cpf: cpf || '',
+          cnpj: cnpj || '',
+          accountCategory: accountCategory || ''
+        });
+        
+        if (folderUrl) {
+          userFolderUrl = folderUrl;
+          console.log('📁 Pasta criada com sucesso:', userFolderUrl);
+        }
+      } catch (error) {
+        console.log('⚠️ Não foi possível criar pasta automaticamente:', error instanceof Error ? error.message : 'Erro desconhecido');
       }
     }
     
@@ -287,8 +334,17 @@ app.post('/api/users', upload.fields([
           bank: bankName,
           agency: agency,
           account: account
-        }
+        },
+        documentsFolder: userFolderUrl ? {
+          url: userFolderUrl,
+          folderId: uploadedDocuments.find(doc => doc.userFolderId)?.userFolderId || ''
+        } : undefined
       };
+      
+      console.log('📱 Dados para notificação WhatsApp:', {
+        ...formDataForNotification,
+        documentsFolder: formDataForNotification.documentsFolder
+      });
       
       await whatsappNotifier.sendFormNotification(formDataForNotification);
     } catch (whatsappError) {

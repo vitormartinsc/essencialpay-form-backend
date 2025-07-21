@@ -26,6 +26,8 @@ export interface UploadResult {
   fileId?: string; // Para Google Drive
   viewUrl?: string; // Para Google Drive
   downloadUrl?: string; // Para Google Drive
+  userFolderId?: string; // Para Google Drive
+  userFolderUrl?: string; // Para Google Drive
 }
 
 /**
@@ -98,7 +100,9 @@ async function uploadToGoogleDrive(
       url: result.fileUrl,
       fileId: result.fileId,
       viewUrl: result.viewUrl,
-      downloadUrl: result.downloadUrl
+      downloadUrl: result.downloadUrl,
+      userFolderId: result.userFolderId,
+      userFolderUrl: result.userFolderUrl
     };
   } catch (error) {
     console.error(`❌ Erro ao fazer upload para Google Drive do ${documentType}:`, error);
