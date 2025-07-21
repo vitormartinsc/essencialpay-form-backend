@@ -463,54 +463,6 @@ app.get('/api/cep/:cep', async (req: Request, res: Response) => {
   }
 });
 
-// Rota de teste para WhatsApp Grupo
-app.post('/api/test-whatsapp-group', async (req: Request, res: Response) => {
-  try {
-    const { message, groupId } = req.body;
-    
-    if (!message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Mensagem é obrigatória'
-      });
-    }
-
-    console.log('🧪 Testando notificação WhatsApp para GRUPO...');
-    
-    if (!whatsappNotifier.isConfigured()) {
-      return res.status(400).json({
-        success: false,
-        message: 'WhatsApp não está configurado. Verifique as variáveis de ambiente.'
-      });
-    }
-
-    const success = await whatsappNotifier.sendToGroup(
-      `🧪 TESTE DE NOTIFICAÇÃO GRUPO\n\n${message}\n\n⏰ ${new Date().toLocaleString('pt-BR')}`,
-      groupId
-    );
-
-    if (success) {
-      res.json({
-        success: true,
-        message: 'Notificação WhatsApp enviada para grupo com sucesso!',
-        recipientType: whatsappNotifier.getRecipientType(),
-        recipient: whatsappNotifier.getCurrentRecipient()
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Erro ao enviar notificação WhatsApp para grupo'
-      });
-    }
-  } catch (error) {
-    console.error('❌ Erro no teste WhatsApp grupo:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro interno no teste WhatsApp grupo'
-    });
-  }
-});
-
 // Rota de teste para WhatsApp
 app.post('/api/test-whatsapp', async (req: Request, res: Response) => {
   try {
@@ -537,11 +489,12 @@ app.post('/api/test-whatsapp', async (req: Request, res: Response) => {
     );
 
     if (success) {
+      const recipientInfo = whatsappNotifier.getRecipientInfo();
       res.json({
         success: true,
         message: 'Notificação WhatsApp enviada com sucesso!',
-        recipientType: whatsappNotifier.getRecipientType(),
-        recipient: whatsappNotifier.getCurrentRecipient()
+        recipientCount: recipientInfo.count,
+        recipients: recipientInfo.numbers
       });
     } else {
       res.status(500).json({
