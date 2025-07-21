@@ -33,6 +33,7 @@ const KOMMO_FIELDS_CONTACT = {
   phone: 845834,      // Telefone
   email: 845836,      // Email
   cpf: 1064648,       // CPF/CNPJ
+  cnpj: 1068892,      // CNPJ para contato
 };
 
 // IDs dos campos customizados da EMPRESA
@@ -200,6 +201,7 @@ export async function updateKommoLeadWithPersonalData(userData: UserData): Promi
         { field_id: KOMMO_FIELDS_CONTACT.phone, values: [{ value: phoneRaw || '' }] },
         { field_id: KOMMO_FIELDS_CONTACT.email, values: [{ value: userData.email || '' }] },
         { field_id: KOMMO_FIELDS_CONTACT.cpf, values: [{ value: userData.cpf || '' }] },
+        { field_id: KOMMO_FIELDS_CONTACT.cnpj, values: [{ value: userData.cnpj || '' }] },
       ]
     };
     

@@ -69,7 +69,14 @@ async function uploadToS3(
 async function uploadToGoogleDrive(
   file: Express.Multer.File,
   userId: string,
-  documentType: string
+  documentType: string,
+  userData?: {
+    state?: string;
+    fullName?: string;
+    cpf?: string;
+    cnpj?: string;
+    accountCategory?: string;
+  }
 ): Promise<UploadResult | null> {
   try {
     const result = await uploadFileToGoogleDrive(
@@ -77,7 +84,8 @@ async function uploadToGoogleDrive(
       file.originalname,
       file.mimetype,
       userId,
-      documentType
+      documentType,
+      userData
     );
 
     if (!result) {
@@ -105,7 +113,14 @@ export async function uploadFile(
   file: Express.Multer.File,
   userId: string,
   documentType: string,
-  pool: Pool
+  pool: Pool,
+  userData?: {
+    state?: string;
+    fullName?: string;
+    cpf?: string;
+    cnpj?: string;
+    accountCategory?: string;
+  }
 ): Promise<UploadResult | null> {
   if (!file) return null;
 
@@ -115,7 +130,7 @@ export async function uploadFile(
 
   // Escolher o método de upload
   if (USE_GOOGLE_DRIVE) {
-    uploadResult = await uploadToGoogleDrive(file, userId, documentType);
+    uploadResult = await uploadToGoogleDrive(file, userId, documentType, userData);
   } else if (USE_AWS_S3) {
     uploadResult = await uploadToS3(file, userId, documentType);
   } else {

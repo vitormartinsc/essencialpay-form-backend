@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
+import { uploadFile } from './utils/fileUpload';
 
 // Carregar variáveis de ambiente do arquivo .env
 dotenv.config({ path: '.env' });
@@ -68,6 +69,7 @@ interface UserFormData {
   city?: string;
   state?: string;
   cnpj?: string;
+  accountCategory?: string; // Tipo de conta: pessoa_fisica ou pessoa_juridica
   // Dados bancários obrigatórios
   bankName: string;
   accountType: string;
@@ -116,6 +118,7 @@ app.post('/api/users', upload.fields([
       city,
       state,
       cnpj,
+      accountCategory,
       bankName,
       accountType,
       agency,
@@ -233,80 +236,33 @@ app.post('/api/users', upload.fields([
     if (files) {
       console.log('📤 Processando arquivos (documento frente, verso, selfie e comprovante de residência)...');
       
-      // Função para fazer upload de um arquivo
-      const uploadFile = async (file: Express.Multer.File, documentType: string) => {
-        if (!file) return null;
-        
-        try {
-          const fileExtension = file.originalname.split('.').pop();
-          const uniqueFileName = `documents/${user.id}/${documentType}_${uuidv4()}.${fileExtension}`;
-
-          // Comando para upload no S3
-          const command = new PutObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: uniqueFileName,
-            Body: file.buffer,
-            ContentType: file.mimetype,
-            ACL: 'private',
-          });
-
-          // Enviar para S3
-          await s3Client.send(command);
-
-          // URL do arquivo no S3
-          const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_S3_REGION_NAME}.amazonaws.com/${uniqueFileName}`;
-
-          // Salvar informações do documento no PostgreSQL
-          const docQuery = `
-            INSERT INTO user_documents (user_id, document_type, file_name, file_url, file_key, file_size, content_type)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
-          `;
-          
-          const docValues = [
-            user.id,
-            documentType,
-            file.originalname,
-            fileUrl,
-            uniqueFileName,
-            file.size,
-            file.mimetype
-          ];
-          
-          const docResult = await pool.query(docQuery, docValues);
-          
-          console.log(`✅ Documento ${documentType} salvo:`, docResult.rows[0].id);
-          
-          return {
-            id: docResult.rows[0].id,
-            type: documentType,
-            fileName: file.originalname,
-            url: fileUrl
-          };
-        } catch (error) {
-          console.error(`❌ Erro ao fazer upload do ${documentType}:`, error);
-          return null;
-        }
+      // Preparar dados do usuário para a estrutura de pastas no Google Drive
+      const userDataForUpload = {
+        state: state || 'XX',
+        fullName: fullName || 'Usuario',
+        cpf: cpf || '',
+        cnpj: cnpj || '',
+        accountCategory: accountCategory || ''
       };
 
       // Processar cada tipo de documento
       if (files.documentFront) {
-        const doc = await uploadFile(files.documentFront[0], 'document_front');
+        const doc = await uploadFile(files.documentFront[0], user.id, 'document_front', pool, userDataForUpload);
         if (doc) uploadedDocuments.push(doc);
       }
       
       if (files.documentBack) {
-        const doc = await uploadFile(files.documentBack[0], 'document_back');
+        const doc = await uploadFile(files.documentBack[0], user.id, 'document_back', pool, userDataForUpload);
         if (doc) uploadedDocuments.push(doc);
       }
       
       if (files.selfie) {
-        const doc = await uploadFile(files.selfie[0], 'selfie');
+        const doc = await uploadFile(files.selfie[0], user.id, 'selfie', pool, userDataForUpload);
         if (doc) uploadedDocuments.push(doc);
       }
       
       if (files.residenceProof) {
-        const doc = await uploadFile(files.residenceProof[0], 'residence_proof');
+        const doc = await uploadFile(files.residenceProof[0], user.id, 'residence_proof', pool, userDataForUpload);
         if (doc) uploadedDocuments.push(doc);
       }
     }
