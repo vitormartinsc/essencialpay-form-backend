@@ -64,14 +64,19 @@ export class WhatsAppNotifier {
   }
 
   private formatTemplateMessage(formData: FormData): any {
-    // Usar CPF ou CNPJ completo (prioridade para CPF)
+    // Lógica inteligente para escolher documento:
+    // Se CNPJ estiver preenchido, usar CNPJ (pessoa jurídica)
+    // Senão, usar CPF (pessoa física)
     let documento = '';
-    if (formData.cpf && formData.cpf.trim()) {
-      documento = formData.cpf;
-    } else if (formData.cnpj && formData.cnpj.trim()) {
+    if (formData.cnpj && formData.cnpj.trim()) {
       documento = formData.cnpj;
+      console.log('📄 Usando CNPJ no template WhatsApp:', documento);
+    } else if (formData.cpf && formData.cpf.trim()) {
+      documento = formData.cpf;
+      console.log('📄 Usando CPF no template WhatsApp:', documento);
     } else {
       documento = 'Não informado';
+      console.log('📄 Nenhum documento informado no template WhatsApp');
     }
     
     return {
@@ -103,6 +108,20 @@ export class WhatsAppNotifier {
       timeZone: 'America/Sao_Paulo'
     });
 
+    // Mesma lógica do template: prioridade para CNPJ se preenchido
+    let documento = '';
+    let tipoDocumento = '';
+    if (formData.cnpj && formData.cnpj.trim()) {
+      documento = formData.cnpj;
+      tipoDocumento = 'CNPJ';
+    } else if (formData.cpf && formData.cpf.trim()) {
+      documento = formData.cpf;
+      tipoDocumento = 'CPF';
+    } else {
+      documento = 'Não informado';
+      tipoDocumento = 'CPF';
+    }
+
     let message = `🚨 *NOVO FORMULÁRIO PREENCHIDO!*
 
 📅 *Data/Hora:* ${timestamp}
@@ -111,7 +130,7 @@ export class WhatsAppNotifier {
 • Nome: ${formData.fullName}
 • Email: ${formData.email}
 • Telefone: ${formData.phone}
-• CPF: ${formData.cpf}`;
+• ${tipoDocumento}: ${documento}`;
 
     // Adicionar data de nascimento apenas se não estiver vazia
     if (formData.birthDate && formData.birthDate.trim()) {
