@@ -4,8 +4,21 @@ interface WhatsAppMessage {
   messaging_product: string;
   to: string;
   type: string;
-  text: {
+  text?: {
     body: string;
+  };
+  template?: {
+    name: string;
+    language: {
+      code: string;
+    };
+    components: Array<{
+      type: string;
+      parameters: Array<{
+        type: string;
+        text: string;
+      }>;
+    }>;
   };
 }
 
@@ -14,6 +27,7 @@ interface FormData {
   email: string;
   phone: string;
   cpf: string;
+  cnpj?: string;  // Adicionando CNPJ como opcional
   birthDate: string;
   address: {
     cep: string;
@@ -45,6 +59,41 @@ export class WhatsAppNotifier {
     this.recipientNumber = process.env.WHATSAPP_RECIPIENT_NUMBER || '';
     this.groupId = process.env.WHATSAPP_GROUP_ID || '';
     this.enabled = process.env.WHATSAPP_ENABLED === 'true';
+  }
+
+  private formatTemplateMessage(formData: FormData): any {
+    // Usar CPF ou CNPJ completo (prioridade para CPF)
+    let documento = '';
+    if (formData.cpf && formData.cpf.trim()) {
+      documento = formData.cpf;
+    } else if (formData.cnpj && formData.cnpj.trim()) {
+      documento = formData.cnpj;
+    } else {
+      documento = 'Não informado';
+    }
+    
+    return {
+      name: "essencialpay_push",
+      language: {
+        code: "pt_BR"
+      },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: formData.fullName },                    // {{1}} Nome
+            { type: "text", text: formData.email },                       // {{2}} Email  
+            { type: "text", text: formData.phone },                       // {{3}} Telefone
+            { type: "text", text: documento },                           // {{4}} CPF ou CNPJ completo
+            { type: "text", text: formData.address.state },              // {{5}} Estado
+            { type: "text", text: formData.bankInfo.bank },              // {{6}} Banco
+            { type: "text", text: formData.bankInfo.agency },            // {{7}} Agência
+            { type: "text", text: formData.bankInfo.account },           // {{8}} Conta
+            { type: "text", text: formData.documentsFolder?.url || "Não disponível" } // {{9}} Pasta
+          ]
+        }
+      ]
+    };
   }
 
   private formatMessage(formData: FormData): string {
@@ -108,18 +157,16 @@ export class WhatsAppNotifier {
     // Log dos dados da pasta para debug
     console.log('📁 Dados da pasta para WhatsApp:', formData.documentsFolder);
 
-    // Determinar o destinatário (grupo ou número individual)
-    const recipient = this.groupId || this.recipientNumber;
-    console.log(`📱 Enviando notificação para: ${this.groupId ? 'GRUPO' : 'NÚMERO'} - ${recipient}`);
+    // Determinar o destinatário (número individual prioritário para templates)
+    const recipient = this.recipientNumber || this.groupId;
+    console.log(`📱 Enviando notificação TEMPLATE para: ${this.recipientNumber ? 'NÚMERO' : 'GRUPO'} - ${recipient}`);
 
     try {
       const message: WhatsAppMessage = {
         messaging_product: "whatsapp",
         to: recipient,
-        type: "text",
-        text: {
-          body: this.formatMessage(formData)
-        }
+        type: "template",
+        template: this.formatTemplateMessage(formData)
       };
 
       const response = await axios.post(
