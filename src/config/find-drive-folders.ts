@@ -54,10 +54,10 @@ async function findFolderStructure() {
 
     console.log(`\n✅ Drive compartilhado "Essencial Pay" encontrado: ${essencialPayDrive.id}`);
 
-    // Buscar pasta "3. Gestão de Carteira" dentro do drive compartilhado
-    console.log('\n📁 Procurando pasta "3. Gestão de Carteira"...');
-    const gestaoResponse = await drive.files.list({
-      q: `name='3. Gestão de Carteira' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    // Buscar pasta "2. Delivery" dentro do drive compartilhado
+    console.log('\n📁 Procurando pasta "2. Delivery"...');
+    const deliveryResponse = await drive.files.list({
+      q: `name='2. Delivery' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       driveId: essencialPayDrive.id!,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
@@ -65,19 +65,19 @@ async function findFolderStructure() {
       fields: 'files(id, name)'
     });
 
-    if (!gestaoResponse.data.files || gestaoResponse.data.files.length === 0) {
-      console.log('❌ Pasta "3. Gestão de Carteira" não encontrada');
+    if (!deliveryResponse.data.files || deliveryResponse.data.files.length === 0) {
+      console.log('❌ Pasta "2. Delivery" não encontrada');
       console.log('💡 Verifique se a pasta existe dentro do drive compartilhado "Essencial Pay"');
       return;
     }
 
-    const gestaoFolder = gestaoResponse.data.files[0];
-    console.log(`✅ Pasta "3. Gestão de Carteira" encontrada: ${gestaoFolder.id}`);
+    const deliveryFolder = deliveryResponse.data.files[0];
+    console.log(`✅ Pasta "2. Delivery" encontrada: ${deliveryFolder.id}`);
 
-    // Buscar pasta "1. Clientes" dentro de "3. Gestão de Carteira"
-    console.log('\n📁 Procurando pasta "1. Clientes"...');
-    const clientesResponse = await drive.files.list({
-      q: `name='1. Clientes' and mimeType='application/vnd.google-apps.folder' and '${gestaoFolder.id}' in parents and trashed=false`,
+    // Buscar pasta "2. Cadastro" dentro de "2. Delivery"
+    console.log('\n📁 Procurando pasta "2. Cadastro"...');
+    const cadastroResponse = await drive.files.list({
+      q: `name='2. Cadastro' and mimeType='application/vnd.google-apps.folder' and '${deliveryFolder.id}' in parents and trashed=false`,
       driveId: essencialPayDrive.id!,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
@@ -85,32 +85,32 @@ async function findFolderStructure() {
       fields: 'files(id, name)'
     });
 
-    if (!clientesResponse.data.files || clientesResponse.data.files.length === 0) {
-      console.log('❌ Pasta "1. Clientes" não encontrada');
-      console.log('💡 Verifique se a pasta existe dentro de "3. Gestão de Carteira"');
+    if (!cadastroResponse.data.files || cadastroResponse.data.files.length === 0) {
+      console.log('❌ Pasta "2. Cadastro" não encontrada');
+      console.log('💡 Verifique se a pasta existe dentro de "2. Delivery"');
       return;
     }
 
-    const clientesFolder = clientesResponse.data.files[0];
-    console.log(`✅ Pasta "1. Clientes" encontrada: ${clientesFolder.id}`);
+    const cadastroFolder = cadastroResponse.data.files[0];
+    console.log(`✅ Pasta "2. Cadastro" encontrada: ${cadastroFolder.id}`);
 
     console.log('\n🎉 Estrutura de pastas encontrada com sucesso!');
     console.log('\n📋 Estrutura:');
     console.log(`📁 Essencial Pay (Drive Compartilhado - ${essencialPayDrive.id})`);
-    console.log(`  └── 📁 3. Gestão de Carteira (${gestaoFolder.id})`);
-    console.log(`      └── 📁 1. Clientes (${clientesFolder.id})`);
+    console.log(`  └── 📁 2. Delivery (${deliveryFolder.id})`);
+    console.log(`      └── 📁 2. Cadastro (${cadastroFolder.id})`);
     
     console.log('\n🔧 Configure no seu arquivo .env:');
-    console.log(`GOOGLE_DRIVE_PARENT_FOLDER_ID=${clientesFolder.id}`);
+    console.log(`GOOGLE_DRIVE_PARENT_FOLDER_ID=${cadastroFolder.id}`);
     
     console.log('\n✨ Agora os documentos serão organizados assim:');
-    console.log('📁 1. Clientes');
-    console.log('  ├── 📁 user_1');
-    console.log('  │   ├── 📁 document_front');
-    console.log('  │   ├── 📁 document_back');
-    console.log('  │   ├── 📁 selfie');
-    console.log('  │   └── 📁 residence_proof');
-    console.log('  └── 📁 user_2');
+    console.log('📁 2. Cadastro');
+    console.log('  ├── 📁 SP - João Silva - 123.456.789-00');
+    console.log('  │   ├── � RG_frente.jpg');
+    console.log('  │   ├── � RG_verso.jpg');
+    console.log('  │   ├── � selfie.jpg');
+    console.log('  │   └── � comprovante_residencia.pdf');
+    console.log('  └── 📁 RJ - Empresa ABC Ltda - 12.345.678/0001-90');
     console.log('      └── ...');
 
   } catch (error) {

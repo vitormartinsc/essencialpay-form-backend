@@ -47,9 +47,14 @@ interface UploadResult {
  */
 async function createFolderIfNotExists(folderName: string, parentFolderId?: string): Promise<string> {
   try {
+    // Escapar aspas simples no nome da pasta para a query
+    const escapedFolderName = folderName.replace(/'/g, "\\'");
+    
     // Verificar se a pasta já existe
-    const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const query = `name='${escapedFolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     const searchQuery = parentFolderId ? `${query} and '${parentFolderId}' in parents` : query;
+    
+    console.log(`🔍 Buscando pasta: ${folderName}`);
     
     const response = await drive.files.list({
       q: searchQuery,
@@ -70,6 +75,8 @@ async function createFolderIfNotExists(folderName: string, parentFolderId?: stri
       parents: parentFolderId ? [parentFolderId] : undefined
     };
 
+    console.log(`📁 Criando pasta: ${folderName}`);
+    
     const folder = await drive.files.create({
       requestBody: folderMetadata,
       fields: 'id',
@@ -92,7 +99,14 @@ export async function uploadFileToGoogleDrive(
   fileName: string,
   mimeType: string,
   userId: string,
-  documentType: string
+  documentType: string,
+  userData?: {
+    state?: string;
+    fullName?: string;
+    cpf?: string;
+    cnpj?: string;
+    accountCategory?: string;
+  }
 ): Promise<UploadResult | null> {
   if (!GOOGLE_DRIVE_ENABLED) {
     console.log('Google Drive desabilitado - pulando upload');
@@ -105,22 +119,57 @@ export async function uploadFileToGoogleDrive(
   }
 
   try {
-    // Criar pasta do usuário se não existir
+    // Estrutura de pastas: GOOGLE_PARENT_FOLDER_ID já aponta para "2. Cadastro"
+    // Então criamos diretamente a pasta do usuário no formato: ESTADO - Nome CPF/CNPJ
+    
+    // 1. Pasta raiz já é "2. Cadastro" (configurada via GOOGLE_DRIVE_PARENT_FOLDER_ID)
+    if (!GOOGLE_PARENT_FOLDER_ID) {
+      throw new Error('GOOGLE_DRIVE_PARENT_FOLDER_ID não configurado');
+    }
+
+    // 2. Criar pasta do usuário no formato: ESTADO - Nome CPF/CNPJ
+    let userFolderName = '';
+    
+    if (userData) {
+      const state = userData.state || 'XX';
+      const name = userData.fullName || 'Usuario';
+      
+      // Determinar se usa CPF ou CNPJ baseado no accountCategory ou nos dados disponíveis
+      let documento = '';
+      if (userData.accountCategory === 'pessoa_fisica' && userData.cpf) {
+        documento = userData.cpf;
+      } else if (userData.accountCategory === 'pessoa_juridica' && userData.cnpj) {
+        documento = userData.cnpj;
+      } else if (userData.cpf) {
+        documento = userData.cpf;
+      } else if (userData.cnpj) {
+        documento = userData.cnpj;
+      } else {
+        documento = 'SEM_DOC';
+      }
+      
+      userFolderName = `${state} - ${name} ${documento}`;
+    } else {
+      userFolderName = `user_${userId}`;
+    }
+
+    // Limpar caracteres inválidos para nomes de pasta no Google Drive
+    // Remover caracteres especiais e simplificar aspas
+    userFolderName = userFolderName
+      .replace(/[<>:"/\\|?*]/g, '_')
+      .replace(/'/g, '')  // Remover aspas simples que podem causar problemas na query
+      .replace(/\s+/g, ' ')  // Normalizar espaços múltiplos
+      .trim();
+
     const userFolderId = await createFolderIfNotExists(
-      `user_${userId}`, 
-      GOOGLE_PARENT_FOLDER_ID
+      userFolderName,
+      GOOGLE_PARENT_FOLDER_ID  // Agora criamos diretamente dentro de "2. Cadastro"
     );
 
-    // Criar pasta do tipo de documento se não existir
-    const documentFolderId = await createFolderIfNotExists(
-      documentType,
-      userFolderId
-    );
-
-    // Preparar o arquivo para upload
+    // Preparar o arquivo para upload (diretamente na pasta do usuário)
     const fileMetadata = {
       name: fileName,
-      parents: [documentFolderId]
+      parents: [userFolderId]
     };
 
     const media = {
@@ -128,7 +177,7 @@ export async function uploadFileToGoogleDrive(
       body: Readable.from(fileBuffer)
     };
 
-    console.log(`📤 Fazendo upload de ${fileName} para Google Drive...`);
+    console.log(`📤 Fazendo upload de ${fileName} para Google Drive na pasta: ${userFolderName}...`);
 
     // Fazer upload
     const response = await drive.files.create({
@@ -142,15 +191,8 @@ export async function uploadFileToGoogleDrive(
     const webViewLink = response.data.webViewLink!;
     const webContentLink = response.data.webContentLink!;
 
-    // Tornar o arquivo público (opcional)
-    await drive.permissions.create({
-      fileId: fileId,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone'
-      },
-      supportsAllDrives: true
-    });
+    // Em drives compartilhados, não podemos criar permissões públicas
+    // Os arquivos herdam as permissões do drive compartilhado
 
     const result: UploadResult = {
       fileId: fileId,
@@ -165,6 +207,18 @@ export async function uploadFileToGoogleDrive(
 
   } catch (error) {
     console.error('❌ Erro ao fazer upload para Google Drive:', error);
+    
+    // Log adicional para debugging
+    if (error && typeof error === 'object') {
+      const gError = error as any;
+      if (gError.response && gError.response.data) {
+        console.error('❌ Detalhes do erro:', JSON.stringify(gError.response.data, null, 2));
+      }
+      if (gError.code) {
+        console.error('❌ Código do erro:', gError.code);
+      }
+    }
+    
     return null;
   }
 }
