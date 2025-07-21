@@ -34,6 +34,45 @@ const auth = new google.auth.GoogleAuth({
 
 const drive = google.drive({ version: 'v3', auth });
 
+/**
+ * Gera um nome bonito e legível para o arquivo baseado no tipo de documento
+ */
+function generateFriendlyFileName(documentType: string, originalFileName: string, docType?: string): string {
+  // Extrair a extensão do arquivo original
+  const extension = originalFileName.split('.').pop()?.toLowerCase() || 'jpg';
+  
+  // Mapear tipos de documento para nomes amigáveis
+  const friendlyNames: { [key: string]: string } = {
+    // Documentos de identidade
+    'document_front': docType === 'CNH' ? 'CNH' : 'RG - Frente',
+    'document_back': docType === 'CNH' ? 'CNH' : 'RG - Verso', // CNH não tem verso, mas mantemos consistência
+    
+    // Outros documentos
+    'selfie': 'Selfie',
+    'residence_proof': 'Comprovante de Residência',
+    
+    // Fallbacks para compatibilidade
+    'rg_front': 'RG - Frente',
+    'rg_back': 'RG - Verso',
+    'cnh': 'CNH', // Para caso específico de CNH
+    'cnh_front': 'CNH',
+    'cnh_back': 'CNH'
+  };
+  
+  const friendlyName = friendlyNames[documentType] || documentType;
+  
+  // Adicionar timestamp para evitar conflitos (formato mais limpo)
+  const timestamp = new Date().toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit', 
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).replace(/[/:]/g, '-').replace(/,/g, '');
+  
+  return `${friendlyName} (${timestamp}).${extension}`;
+}
+
 interface UploadResult {
   fileId: string;
   fileName: string;
@@ -108,7 +147,8 @@ export async function uploadFileToGoogleDrive(
     cpf?: string;
     cnpj?: string;
     accountCategory?: string;
-  }
+  },
+  docType?: string // Parâmetro para indicar se é RG ou CNH
 ): Promise<UploadResult | null> {
   if (!GOOGLE_DRIVE_ENABLED) {
     console.log('Google Drive desabilitado - pulando upload');
@@ -168,9 +208,12 @@ export async function uploadFileToGoogleDrive(
       GOOGLE_PARENT_FOLDER_ID  // Agora criamos diretamente dentro de "2. Cadastro"
     );
 
+    // Gerar nome amigável para o arquivo
+    const friendlyFileName = generateFriendlyFileName(documentType, fileName, docType);
+
     // Preparar o arquivo para upload (diretamente na pasta do usuário)
     const fileMetadata = {
-      name: fileName,
+      name: friendlyFileName,
       parents: [userFolderId]
     };
 
@@ -179,7 +222,7 @@ export async function uploadFileToGoogleDrive(
       body: Readable.from(fileBuffer)
     };
 
-    console.log(`📤 Fazendo upload de ${fileName} para Google Drive na pasta: ${userFolderName}...`);
+    console.log(`📤 Fazendo upload de ${friendlyFileName} para Google Drive na pasta: ${userFolderName}...`);
 
     // Fazer upload
     const response = await drive.files.create({
@@ -198,7 +241,7 @@ export async function uploadFileToGoogleDrive(
 
     const result: UploadResult = {
       fileId: fileId,
-      fileName: fileName,
+      fileName: friendlyFileName, // Usar o nome amigável
       fileUrl: webContentLink,
       viewUrl: webViewLink,
       downloadUrl: `https://drive.google.com/uc?id=${fileId}&export=download`,

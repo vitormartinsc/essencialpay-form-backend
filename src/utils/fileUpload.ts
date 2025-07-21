@@ -78,7 +78,8 @@ async function uploadToGoogleDrive(
     cpf?: string;
     cnpj?: string;
     accountCategory?: string;
-  }
+  },
+  docType?: string // Novo parâmetro para RG ou CNH
 ): Promise<UploadResult | null> {
   try {
     const result = await uploadFileToGoogleDrive(
@@ -87,7 +88,8 @@ async function uploadToGoogleDrive(
       file.mimetype,
       userId,
       documentType,
-      userData
+      userData,
+      docType // Passar o tipo de documento (RG ou CNH)
     );
 
     if (!result) {
@@ -124,7 +126,8 @@ export async function uploadFile(
     cpf?: string;
     cnpj?: string;
     accountCategory?: string;
-  }
+  },
+  docType?: string // Novo parâmetro para RG ou CNH
 ): Promise<UploadResult | null> {
   if (!file) return null;
 
@@ -134,7 +137,7 @@ export async function uploadFile(
 
   // Escolher o método de upload
   if (USE_GOOGLE_DRIVE) {
-    uploadResult = await uploadToGoogleDrive(file, userId, documentType, userData);
+    uploadResult = await uploadToGoogleDrive(file, userId, documentType, userData, docType);
   } else if (USE_AWS_S3) {
     uploadResult = await uploadToS3(file, userId, documentType);
   } else {
