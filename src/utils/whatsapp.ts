@@ -27,7 +27,7 @@ interface FormData {
   email: string;
   phone: string;
   cpf: string;
-  cnpj?: string;  // Adicionando CNPJ como opcional
+  cnpj?: string;
   birthDate: string;
   address: {
     cep: string;
@@ -49,15 +49,17 @@ interface FormData {
 export class WhatsAppNotifier {
   private accessToken: string;
   private phoneNumberId: string;
-  private recipientNumber: string;
-  private groupId: string;
+  private recipientNumbers: string[];
   private enabled: boolean;
 
   constructor() {
     this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
     this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
-    this.recipientNumber = process.env.WHATSAPP_RECIPIENT_NUMBER || '';
-    this.groupId = process.env.WHATSAPP_GROUP_ID || '';
+    
+    // Suporte para múltiplos números separados por vírgula
+    const recipientNumbers = process.env.WHATSAPP_RECIPIENT_NUMBERS || process.env.WHATSAPP_RECIPIENT_NUMBER || '';
+    this.recipientNumbers = recipientNumbers.split(',').map(num => num.trim()).filter(num => num.length > 0);
+    
     this.enabled = process.env.WHATSAPP_ENABLED === 'true';
   }
 
@@ -149,48 +151,63 @@ export class WhatsAppNotifier {
       return false;
     }
 
-    if (!this.recipientNumber && !this.groupId) {
-      console.error('WhatsApp configuration incomplete: no recipient number or group ID');
+    if (this.recipientNumbers.length === 0) {
+      console.error('WhatsApp configuration incomplete: no recipient numbers');
       return false;
     }
 
     // Log dos dados da pasta para debug
     console.log('📁 Dados da pasta para WhatsApp:', formData.documentsFolder);
 
-    // Determinar o destinatário (número individual prioritário para templates)
-    const recipient = this.recipientNumber || this.groupId;
-    console.log(`📱 Enviando notificação TEMPLATE para: ${this.recipientNumber ? 'NÚMERO' : 'GRUPO'} - ${recipient}`);
+    console.log(`📱 Enviando notificação TEMPLATE para ${this.recipientNumbers.length} números: ${this.recipientNumbers.join(', ')}`);
 
-    try {
-      const message: WhatsAppMessage = {
-        messaging_product: "whatsapp",
-        to: recipient,
-        type: "template",
-        template: this.formatTemplateMessage(formData)
-      };
+    let successCount = 0;
+    const errors: string[] = [];
 
-      const response = await axios.post(
-        `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`,
-        message,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json'
+    // Enviar para cada número na lista
+    for (const recipientNumber of this.recipientNumbers) {
+      try {
+        const message: WhatsAppMessage = {
+          messaging_product: "whatsapp",
+          to: recipientNumber,
+          type: "template",
+          template: this.formatTemplateMessage(formData)
+        };
+
+        const response = await axios.post(
+          `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`,
+          message,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
 
-      console.log('WhatsApp notification sent successfully:', response.data);
-      return true;
-    } catch (error) {
-      console.error('Error sending WhatsApp notification:', error);
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as any;
-        console.error('Response data:', axiosError.response?.data);
-        console.error('Response status:', axiosError.response?.status);
+        console.log(`✅ WhatsApp notification sent successfully to ${recipientNumber}:`, response.data);
+        successCount++;
+        
+        // Pequeno delay entre envios para evitar rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        const errorMsg = `Error sending to ${recipientNumber}`;
+        console.error(errorMsg, error);
+        errors.push(errorMsg);
+        
+        if (error && typeof error === 'object' && 'response' in error) {
+          const axiosError = error as any;
+          console.error(`Response data for ${recipientNumber}:`, axiosError.response?.data);
+          console.error(`Response status for ${recipientNumber}:`, axiosError.response?.status);
+        }
       }
-      return false;
     }
+
+    console.log(`📊 WhatsApp Envios: ${successCount}/${this.recipientNumbers.length} sucessos`);
+    
+    // Retorna true se pelo menos um envio foi bem-sucedido
+    return successCount > 0;
   }
 
   async sendSimpleNotification(message: string): Promise<boolean> {
@@ -199,41 +216,58 @@ export class WhatsAppNotifier {
       return false;
     }
 
-    // Determinar o destinatário (grupo ou número individual)
-    const recipient = this.groupId || this.recipientNumber;
-
-    try {
-      const whatsappMessage: WhatsAppMessage = {
-        messaging_product: "whatsapp",
-        to: recipient,
-        type: "text",
-        text: {
-          body: message
-        }
-      };
-
-      const response = await axios.post(
-        `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`,
-        whatsappMessage,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      console.log('WhatsApp simple notification sent:', response.data);
-      return true;
-    } catch (error) {
-      console.error('Error sending simple WhatsApp notification:', error);
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as any;
-        console.error('Response data:', axiosError.response?.data);
-        console.error('Response status:', axiosError.response?.status);
-      }
+    if (this.recipientNumbers.length === 0) {
+      console.error('WhatsApp configuration incomplete: no recipient numbers');
       return false;
     }
+
+    let successCount = 0;
+    const errors: string[] = [];
+
+    // Enviar para cada número na lista
+    for (const recipientNumber of this.recipientNumbers) {
+      try {
+        const whatsappMessage: WhatsAppMessage = {
+          messaging_product: "whatsapp",
+          to: recipientNumber,
+          type: "text",
+          text: {
+            body: message
+          }
+        };
+
+        const response = await axios.post(
+          `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`,
+          whatsappMessage,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        console.log(`✅ WhatsApp simple notification sent to ${recipientNumber}:`, response.data);
+        successCount++;
+        
+        // Pequeno delay entre envios
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        const errorMsg = `Error sending simple notification to ${recipientNumber}`;
+        console.error(errorMsg, error);
+        errors.push(errorMsg);
+        
+        if (error && typeof error === 'object' && 'response' in error) {
+          const axiosError = error as any;
+          console.error(`Response data for ${recipientNumber}:`, axiosError.response?.data);
+          console.error(`Response status for ${recipientNumber}:`, axiosError.response?.status);
+        }
+      }
+    }
+
+    console.log(`📊 WhatsApp Simple Envios: ${successCount}/${this.recipientNumbers.length} sucessos`);
+    return successCount > 0;
   }
 
   // Método público para testar a formatação da mensagem
@@ -246,67 +280,17 @@ export class WhatsAppNotifier {
     return this.enabled && 
            !!this.accessToken && 
            !!this.phoneNumberId && 
-           (!!this.recipientNumber || !!this.groupId);
+           this.recipientNumbers.length > 0;
   }
 
-  // Método específico para enviar para grupo
-  async sendToGroup(message: string, groupId?: string): Promise<boolean> {
-    if (!this.enabled) {
-      console.log('WhatsApp notifications disabled');
-      return false;
-    }
-
-    const targetGroup = groupId || this.groupId;
-    if (!targetGroup) {
-      console.error('No group ID provided');
-      return false;
-    }
-
-    try {
-      const whatsappMessage: WhatsAppMessage = {
-        messaging_product: "whatsapp",
-        to: targetGroup,
-        type: "text",
-        text: {
-          body: message
-        }
-      };
-
-      const response = await axios.post(
-        `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`,
-        whatsappMessage,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      console.log('WhatsApp group message sent:', response.data);
-      return true;
-    } catch (error) {
-      console.error('Error sending WhatsApp group message:', error);
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as any;
-        console.error('Response data:', axiosError.response?.data);
-        console.error('Response status:', axiosError.response?.status);
-      }
-      return false;
-    }
-  }
-
-  // Método para verificar tipo de destinatário
-  getRecipientType(): string {
-    if (this.groupId) return 'GROUP';
-    if (this.recipientNumber) return 'INDIVIDUAL';
-    return 'NONE';
-  }
-
-  // Método para obter o destinatário atual
-  getCurrentRecipient(): string {
-    return this.groupId || this.recipientNumber || '';
+  // Método para obter informações dos destinatários
+  getRecipientInfo(): { count: number; numbers: string[] } {
+    return {
+      count: this.recipientNumbers.length,
+      numbers: this.recipientNumbers
+    };
   }
 }
 
+// Instância singleton para uso em toda a aplicação
 export const whatsappNotifier = new WhatsAppNotifier();
