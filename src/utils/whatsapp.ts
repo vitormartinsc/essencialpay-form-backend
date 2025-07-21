@@ -26,6 +26,10 @@ interface FormData {
     agency: string;
     account: string;
   };
+  documentsFolder?: {
+    url: string;
+    folderId: string;
+  };
 }
 
 export class WhatsAppNotifier {
@@ -48,7 +52,7 @@ export class WhatsAppNotifier {
       timeZone: 'America/Sao_Paulo'
     });
 
-    return `🚨 *NOVO FORMULÁRIO PREENCHIDO!*
+    let message = `🚨 *NOVO FORMULÁRIO PREENCHIDO!*
 
 📅 *Data/Hora:* ${timestamp}
 
@@ -56,21 +60,33 @@ export class WhatsAppNotifier {
 • Nome: ${formData.fullName}
 • Email: ${formData.email}
 • Telefone: ${formData.phone}
-• CPF: ${formData.cpf}
-• Data Nascimento: ${formData.birthDate}
+• CPF: ${formData.cpf}`;
 
-📍 *Endereço:*
-• CEP: ${formData.address.cep}
-• Rua: ${formData.address.street}
-• Cidade: ${formData.address.city}
-• Estado: ${formData.address.state}
+    // Adicionar data de nascimento apenas se não estiver vazia
+    if (formData.birthDate && formData.birthDate.trim()) {
+      message += `\n• Data Nascimento: ${formData.birthDate}`;
+    }
 
-🏦 *Dados Bancários:*
+    // Adicionar estado sempre (obrigatório)
+    if (formData.address.state) {
+      message += `\n\n📍 *Estado:* ${formData.address.state}`;
+    }
+
+    // Adicionar dados bancários
+    message += `\n\n🏦 *Dados Bancários:*
 • Banco: ${formData.bankInfo.bank}
 • Agência: ${formData.bankInfo.agency}
-• Conta: ${formData.bankInfo.account}
+• Conta: ${formData.bankInfo.account}`;
 
-✅ Formulário completo recebido e processado!`;
+    // Adicionar link da pasta se disponível
+    if (formData.documentsFolder?.url) {
+      message += `\n\n📁 *Documentos:*
+🔗 *Pasta no Drive:* ${formData.documentsFolder.url}`;
+    }
+
+    message += `\n\n✅ Formulário completo recebido e processado!`;
+
+    return message;
   }
 
   async sendFormNotification(formData: FormData): Promise<boolean> {
@@ -79,10 +95,18 @@ export class WhatsAppNotifier {
       return false;
     }
 
-    if (!this.accessToken || !this.phoneNumberId || !this.recipientNumber) {
-      console.error('WhatsApp configuration incomplete');
+    if (!this.accessToken || !this.phoneNumberId) {
+      console.error('WhatsApp configuration incomplete: missing token or phone ID');
       return false;
     }
+
+    if (!this.recipientNumber && !this.groupId) {
+      console.error('WhatsApp configuration incomplete: no recipient number or group ID');
+      return false;
+    }
+
+    // Log dos dados da pasta para debug
+    console.log('📁 Dados da pasta para WhatsApp:', formData.documentsFolder);
 
     // Determinar o destinatário (grupo ou número individual)
     const recipient = this.groupId || this.recipientNumber;
@@ -163,6 +187,11 @@ export class WhatsAppNotifier {
       }
       return false;
     }
+  }
+
+  // Método público para testar a formatação da mensagem
+  public formatMessageForTesting(formData: FormData): string {
+    return this.formatMessage(formData);
   }
 
   // Método para verificar se as configurações estão corretas

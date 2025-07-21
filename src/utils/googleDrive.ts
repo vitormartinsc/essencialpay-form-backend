@@ -40,6 +40,8 @@ interface UploadResult {
   fileUrl: string;
   viewUrl: string;
   downloadUrl: string;
+  userFolderId?: string;
+  userFolderUrl?: string;
 }
 
 /**
@@ -199,7 +201,9 @@ export async function uploadFileToGoogleDrive(
       fileName: fileName,
       fileUrl: webContentLink,
       viewUrl: webViewLink,
-      downloadUrl: `https://drive.google.com/uc?id=${fileId}&export=download`
+      downloadUrl: `https://drive.google.com/uc?id=${fileId}&export=download`,
+      userFolderId: userFolderId,
+      userFolderUrl: `https://drive.google.com/drive/folders/${userFolderId}`
     };
 
     console.log(`✅ Upload concluído - File ID: ${fileId}`);
