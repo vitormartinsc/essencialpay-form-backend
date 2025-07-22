@@ -1,18 +1,23 @@
 # Changelog - Essencial Pay Form Backend
 
-## [Versão Atual] - 2025-01-03
+## [Versão Atual] - 2025-01-22
 
 ### ✅ Adicionado
 - **API de CEP**: Nova rota `/api/cep/:cep` que busca endereços automaticamente via ViaCEP
 - **Integração ViaCEP**: Preenche automaticamente campos de endereço quando o usuário digita o CEP
+- **Debug Móvel**: Console de debug móvel para visualizar logs em dispositivos móveis
+- **Compressão de Imagens**: Compressão automática de imagens antes do upload (máximo 20MB)
+- **Logs Detalhados**: Sistema de logs detalhados para debugar problemas de upload
 
 ### ✅ Removido
 - **Campo RG**: Removido do formulário e validações por não ser necessário
 
 ### ✅ Melhorado
 - **Feedback Visual**: Campo CEP mostra "Buscando endereço..." durante a busca
-- **Tratamento de Erros**: Melhor tratamento de erros na busca de CEP
+- **Tratamento de Erros**: Melhor tratamento de erros na busca de CEP e upload de arquivos
 - **Experiência do Usuário**: Preenchimento automático dos campos de endereço
+- **Validação de Arquivos**: Aumento do limite de tamanho para 20MB
+- **Processamento de Selfie**: Compressão automática de selfies tiradas no mobile
 
 ## Como usar a API de CEP
 

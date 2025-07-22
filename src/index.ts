@@ -15,7 +15,7 @@ dotenv.config({ path: '.env' });
 
 // 🚨 FORÇAR DATABASE_URL para desenvolvimento local
 if (process.env.NODE_ENV !== 'production') {
-  process.env.DATABASE_URL = 'postgresql://postgres:***REMOVED***@hopper.proxy.rlwy.net:57099/railway';
+  process.env.DATABASE_URL = process.env.DATABASE_URL_EXTERNAL;
 }
 
 console.log('🔍 DATABASE_URL:', process.env.DATABASE_URL?.includes('railway.internal') ? 'ERRO: Usando URL interna!' : 'OK: Usando URL externa');
@@ -35,6 +35,10 @@ const BUCKET_NAME = process.env.AWS_STORAGE_BUCKET_NAME || 'essencial-form-files
 // Configuração do PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 5, // Máximo de 5 conexões para evitar limites do Railway
+  idleTimeoutMillis: 30000, // 30 segundos
+  connectionTimeoutMillis: 20000, // 20 segundos para timeout
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
 // Configuração do multer para upload de arquivos
