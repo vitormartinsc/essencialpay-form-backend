@@ -30,6 +30,7 @@
     "@aws-sdk/s3-request-presigner": "^3.842.0",
     "@types/axios": "^0.9.36",
     "@types/multer": "^2.0.0",
+    "@types/sharp": "^0.31.1",
     "@types/uuid": "^10.0.0",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
@@ -38,6 +39,7 @@
     "googleapis": "^153.0.0",
     "multer": "^2.0.1",
     "pg": "^8.16.3",
+    "sharp": "^0.34.3",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

@@ -9,6 +9,7 @@ import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
 import { uploadFile } from './utils/fileUpload';
 import { whatsappNotifier } from './utils/whatsapp';
 import { getUserFolderUrl } from './utils/folderHelper';
+import { compressImage } from './utils/imageCompression';
 
 // Carregar variáveis de ambiente do arquivo .env
 dotenv.config({ path: '.env' });
@@ -45,7 +46,7 @@ const pool = new Pool({
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limite
+    fileSize: 20 * 1024 * 1024, // 20MB limite (vamos comprimir depois)
   },
   fileFilter: (req, file, cb) => {
     // Aceitar apenas JPG, PNG, WEBP e PDF
@@ -57,6 +58,35 @@ const upload = multer({
     }
   },
 });
+
+// Middleware para comprimir imagens após o upload
+const compressImagesMiddleware = async (req: Request, res: Response, next: Function) => {
+  try {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    
+    if (files) {
+      // Processar cada arquivo
+      for (const fieldName in files) {
+        const fileArray = files[fieldName];
+        for (let i = 0; i < fileArray.length; i++) {
+          const file = fileArray[i];
+          
+          // Comprimir apenas imagens
+          if (file.mimetype.startsWith('image/')) {
+            const compressedBuffer = await compressImage(file.buffer, file.mimetype);
+            file.buffer = compressedBuffer;
+            file.size = compressedBuffer.length;
+          }
+        }
+      }
+    }
+    
+    next();
+  } catch (error) {
+    console.error('❌ Erro ao comprimir imagens:', error);
+    next(error);
+  }
+};
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -109,7 +139,7 @@ app.post('/api/users', upload.fields([
   { name: 'documentBack', maxCount: 1 },
   { name: 'selfie', maxCount: 1 },
   { name: 'residenceProof', maxCount: 1 }
-]), async (req: Request, res: Response) => {
+]), compressImagesMiddleware, async (req: Request, res: Response) => {
   try {
     const {
       fullName,
@@ -252,48 +282,69 @@ app.post('/api/users', upload.fields([
     if (files) {
       console.log('📤 Processando arquivos (documento frente, verso, selfie e comprovante de residência)...');
 
-      // Processar cada tipo de documento
+      // Processar uploads em paralelo para ser mais rápido
+      const uploadPromises: Promise<any>[] = [];
+
+      // Processar cada tipo de documento em paralelo
       if (files.documentFront) {
-        const doc = await uploadFile(files.documentFront[0], user.id, 'document_front', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          // Capturar o URL da pasta do primeiro documento uploaded
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-            console.log('📁 URL da pasta capturado:', userFolderUrl);
-          }
-        }
+        uploadPromises.push(
+          uploadFile(files.documentFront[0], user.id, 'document_front', pool, userDataForUpload, documentType)
+            .then(doc => {
+              if (doc) {
+                uploadedDocuments.push(doc);
+                if (!userFolderUrl && doc.userFolderUrl) {
+                  userFolderUrl = doc.userFolderUrl;
+                  console.log('📁 URL da pasta capturado:', userFolderUrl);
+                }
+              }
+            })
+        );
       }
       
       if (files.documentBack) {
-        const doc = await uploadFile(files.documentBack[0], user.id, 'document_back', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-          }
-        }
+        uploadPromises.push(
+          uploadFile(files.documentBack[0], user.id, 'document_back', pool, userDataForUpload, documentType)
+            .then(doc => {
+              if (doc) {
+                uploadedDocuments.push(doc);
+                if (!userFolderUrl && doc.userFolderUrl) {
+                  userFolderUrl = doc.userFolderUrl;
+                }
+              }
+            })
+        );
       }
       
       if (files.selfie) {
-        const doc = await uploadFile(files.selfie[0], user.id, 'selfie', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-          }
-        }
+        uploadPromises.push(
+          uploadFile(files.selfie[0], user.id, 'selfie', pool, userDataForUpload, documentType)
+            .then(doc => {
+              if (doc) {
+                uploadedDocuments.push(doc);
+                if (!userFolderUrl && doc.userFolderUrl) {
+                  userFolderUrl = doc.userFolderUrl;
+                }
+              }
+            })
+        );
       }
       
       if (files.residenceProof) {
-        const doc = await uploadFile(files.residenceProof[0], user.id, 'residence_proof', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-          }
-        }
+        uploadPromises.push(
+          uploadFile(files.residenceProof[0], user.id, 'residence_proof', pool, userDataForUpload, documentType)
+            .then(doc => {
+              if (doc) {
+                uploadedDocuments.push(doc);
+                if (!userFolderUrl && doc.userFolderUrl) {
+                  userFolderUrl = doc.userFolderUrl;
+                }
+              }
+            })
+        );
       }
+
+      // Aguardar todos os uploads em paralelo
+      await Promise.all(uploadPromises);
     }
     
     // Se não temos URL da pasta (nenhum documento foi enviado), mas o Google Drive está habilitado,
@@ -319,44 +370,7 @@ app.post('/api/users', upload.fields([
       }
     }
     
-    // Enviar notificação WhatsApp
-    try {
-      console.log('📱 Enviando notificação WhatsApp...');
-      const formDataForNotification = {
-        fullName: fullName || '',
-        email: email || '',
-        phone: phone,
-        cpf: cpf || '',
-        cnpj: cnpj || '', // Adicionar CNPJ para o template WhatsApp
-        birthDate: '', // Você pode adicionar este campo se necessário
-        address: {
-          cep: cep || '',
-          street: street || '',
-          city: city || '',
-          state: state || ''
-        },
-        bankInfo: {
-          bank: bankName,
-          agency: agency,
-          account: account
-        },
-        documentsFolder: userFolderUrl ? {
-          url: userFolderUrl,
-          folderId: uploadedDocuments.find(doc => doc.userFolderId)?.userFolderId || ''
-        } : undefined
-      };
-      
-      console.log('📱 Dados para notificação WhatsApp:', {
-        ...formDataForNotification,
-        documentsFolder: formDataForNotification.documentsFolder
-      });
-      
-      await whatsappNotifier.sendFormNotification(formDataForNotification);
-    } catch (whatsappError) {
-      console.error('⚠️ Erro ao enviar notificação WhatsApp (não crítico):', whatsappError instanceof Error ? whatsappError.message : 'Erro desconhecido');
-      // Não falha a operação se o WhatsApp falhar
-    }
-    
+    // Enviar resposta imediatamente para o usuário
     res.json({
       success: true,
       message: 'Celular, dados bancários e documentos salvos com sucesso!',
@@ -366,6 +380,46 @@ app.post('/api/users', upload.fields([
         email: user.email,
         created_at: user.created_at,
         documents: uploadedDocuments
+      }
+    });
+
+    // Processar notificações em background (não bloqueia a resposta)
+    setImmediate(async () => {
+      try {
+        // Enviar notificação WhatsApp em background
+        console.log('📱 Enviando notificação WhatsApp...');
+        const formDataForNotification = {
+          fullName: fullName || '',
+          email: email || '',
+          phone: phone,
+          cpf: cpf || '',
+          cnpj: cnpj || '', // Adicionar CNPJ para o template WhatsApp
+          birthDate: '', // Você pode adicionar este campo se necessário
+          address: {
+            cep: cep || '',
+            street: street || '',
+            city: city || '',
+            state: state || ''
+          },
+          bankInfo: {
+            bank: bankName,
+            agency: agency,
+            account: account
+          },
+          documentsFolder: userFolderUrl ? {
+            url: userFolderUrl,
+            folderId: uploadedDocuments.find(doc => doc.userFolderId)?.userFolderId || ''
+          } : undefined
+        };
+        
+        console.log('📱 Dados para notificação WhatsApp:', {
+          ...formDataForNotification,
+          documentsFolder: formDataForNotification.documentsFolder
+        });
+        
+        await whatsappNotifier.sendFormNotification(formDataForNotification);
+      } catch (whatsappError) {
+        console.error('⚠️ Erro ao enviar notificação WhatsApp (não crítico):', whatsappError instanceof Error ? whatsappError.message : 'Erro desconhecido');
       }
     });
     
