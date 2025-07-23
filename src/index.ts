@@ -46,7 +46,7 @@ const pool = new Pool({
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 20 * 1024 * 1024, // 20MB limite (vamos comprimir depois)
+    fileSize: 10 * 1024 * 1024, // 10MB limite (frontend já comprime)
   },
   fileFilter: (req, file, cb) => {
     // Aceitar apenas JPG, PNG, WEBP e PDF
@@ -59,23 +59,25 @@ const upload = multer({
   },
 });
 
-// Middleware para comprimir imagens após o upload
+// Middleware para compressão adicional (opcional, já que frontend comprime)
 const compressImagesMiddleware = async (req: Request, res: Response, next: Function) => {
   try {
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (files) {
-      // Processar cada arquivo
+      // Processar cada arquivo apenas se for muito grande
       for (const fieldName in files) {
         const fileArray = files[fieldName];
         for (let i = 0; i < fileArray.length; i++) {
           const file = fileArray[i];
           
-          // Comprimir apenas imagens
-          if (file.mimetype.startsWith('image/')) {
+          // Comprimir apenas imagens grandes (maior que 1MB)
+          if (file.mimetype.startsWith('image/') && file.size > 1024 * 1024) {
+            console.log(`🔧 Comprimindo arquivo grande no backend: ${file.originalname} (${Math.round(file.size / 1024)}KB)`);
             const compressedBuffer = await compressImage(file.buffer, file.mimetype);
             file.buffer = compressedBuffer;
             file.size = compressedBuffer.length;
+            console.log(`✅ Compressão adicional concluída: ${Math.round(file.size / 1024)}KB`);
           }
         }
       }
@@ -84,12 +86,19 @@ const compressImagesMiddleware = async (req: Request, res: Response, next: Funct
     next();
   } catch (error) {
     console.error('❌ Erro ao comprimir imagens:', error);
-    next(error);
+    next(); // Continuar mesmo se a compressão falhar
   }
 };
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+
+// Aumentar timeout para uploads
+app.use((req, res, next) => {
+  req.setTimeout(60000); // 60 segundos
+  res.setTimeout(60000); // 60 segundos
+  next();
+});
 
 // Interface para dados do usuário - celular e dados bancários obrigatórios
 interface UserFormData {
@@ -123,13 +132,30 @@ console.log('CORS_ALLOWED_ORIGINS:', process.env.CORS_ALLOWED_ORIGINS);
 
 const corsOrigins = process.env.NODE_ENV === 'production' 
   ? (process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []))
-  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:8080'];
+  : [
+      'http://localhost:5173', 
+      'http://localhost:5174', 
+      'http://localhost:5175', 
+      'http://localhost:5176', 
+      'http://localhost:5137', // Porta atual do seu frontend
+      'http://localhost:8080',
+      // Permitir toda a rede 192.168.x.x nas portas comuns
+      'http://192.168.18.144:5137', // Seu IP específico
+      'http://192.168.18.144:5173',
+      'http://192.168.18.144:5174',
+      'http://192.168.18.144:5175',
+      'http://192.168.18.144:5176',
+    ];
 
-console.log('🌐 CORS Origins configurados:', corsOrigins);
+console.log('🌐 CORS Origins configurados:', process.env.NODE_ENV === 'production' ? corsOrigins : 'DESENVOLVIMENTO - Todas as origens permitidas');
 
 app.use(cors({
-  origin: corsOrigins.filter(Boolean), // Remove valores undefined
+  origin: process.env.NODE_ENV === 'production' 
+    ? corsOrigins.filter(Boolean) 
+    : true, // Em desenvolvimento, permitir qualquer origem
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json());
 
