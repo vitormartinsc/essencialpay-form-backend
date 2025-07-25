@@ -4,12 +4,14 @@ import multer from 'multer';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+
+// Carregar variáveis de ambiente do arquivo .env PRIMEIRO
+dotenv.config({ path: '.env' });
+
+// Agora importar módulos que dependem das variáveis de ambiente
 import { UserData } from './utils/kommo';
 import { whatsappNotifier } from './utils/whatsapp';
 import BackgroundProcessor, { BackgroundTaskData, UserDataForUpload } from './utils/backgroundProcessor';
-
-// Carregar variáveis de ambiente do arquivo .env
-dotenv.config({ path: '.env' });
 
 // 🚨 FORÇAR DATABASE_URL para desenvolvimento local
 if (process.env.NODE_ENV !== 'production') {
@@ -92,9 +94,12 @@ console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
 console.log('CORS_ALLOWED_ORIGINS:', process.env.CORS_ALLOWED_ORIGINS);
 
-const corsOrigins = process.env.NODE_ENV === 'production' 
-  ? (process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []))
-  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:8080'];
+// Usar sempre as configurações do .env se disponíveis, caso contrário usar fallback
+const corsOrigins = process.env.CORS_ALLOWED_ORIGINS 
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+  : process.env.NODE_ENV === 'production' 
+    ? (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
+    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:5137', 'http://localhost:8080'];
 
 console.log('🌐 CORS Origins configurados:', corsOrigins);
 
