@@ -1,14 +1,12 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { v4 as uuidv4 } from 'uuid';
+import { S3Client } from '@aws-sdk/client-s3';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
-import { updateKommoLeadWithPersonalData, UserData } from './utils/kommo';
-import { uploadFile } from './utils/fileUpload';
+import { UserData } from './utils/kommo';
 import { whatsappNotifier } from './utils/whatsapp';
-import { getUserFolderUrl } from './utils/folderHelper';
+import BackgroundProcessor, { BackgroundTaskData, UserDataForUpload } from './utils/backgroundProcessor';
 
 // Carregar variáveis de ambiente do arquivo .env
 dotenv.config({ path: '.env' });
@@ -40,6 +38,9 @@ const pool = new Pool({
   connectionTimeoutMillis: 20000, // 20 segundos para timeout
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+// Instanciar o processador de background
+const backgroundProcessor = new BackgroundProcessor(pool);
 
 // Configuração do multer para upload de arquivos
 const upload = multer({
@@ -195,179 +196,99 @@ app.post('/api/users', upload.fields([
     
     console.log('✅ Dados bancários salvos com sucesso:', user.id);
     
-    // Atualizar dados no Kommo (sempre executar já que celular é obrigatório)
-    try {
-      console.log('🔄 Atualizando dados no Kommo...');
-      const userData: UserData = {
-        fullName: fullName || '',
-        nome: fullName || '',
-        email: email || '',
-        phone: phone,
-        telefone: phone,
-        cpf: cpf || '',
-        cnpj: cnpj || '',
-        cep: cep || '',
-        street: street || '',
-        logradouro: street || '',
-        number: number || '',
-        numero: number || '',
-        complement: complement || '',
-        complemento: complement || '',
-        neighborhood: neighborhood || '',
-        bairro: neighborhood || '',
-        city: city || '',
-        cidade: city || '',
-        state: state || '',
-        estado: state || '',
-        bankName: bankName,
-        bank_name: bankName,
-        accountType: accountType,
-        account_type: accountType,
-        agency: agency,
-        account: account,
-        documentType: documentType
-      };
-      
-      await updateKommoLeadWithPersonalData(userData);
-    } catch (kommoError) {
-      console.error('⚠️ Erro ao atualizar dados no Kommo (não crítico):', kommoError instanceof Error ? kommoError.message : 'Erro desconhecido');
-      // Não falha a operação se o Kommo falhar
-    }
-    
-    // Processar arquivos se foram enviados
-    const uploadedDocuments: any[] = [];
-    let userFolderUrl: string | undefined;
-    
-    // Preparar dados do usuário para a estrutura de pastas no Google Drive
-    const userDataForUpload = {
+    // 🚀 RETORNAR SUCESSO IMEDIATAMENTE - PROCESSAMENTO EM BACKGROUND
+    // Responder ao frontend imediatamente após salvar no banco
+    res.json({
+      success: true,
+      message: 'Dados salvos com sucesso! Sua solicitação está sendo processada.',
+      data: {
+        id: user.id,
+        nome: user.nome,
+        email: user.email,
+        created_at: user.created_at
+      }
+    });
+
+    // 🔄 PROCESSAR INTEGRAÇÕES EM BACKGROUND (sem bloquear o frontend)
+    // Preparar dados para processamento em background
+    const userDataForKommo: UserData = {
+      fullName: fullName || '',
+      nome: fullName || '',
+      email: email || '',
+      phone: phone,
+      telefone: phone,
+      cpf: cpf || '',
+      cnpj: cnpj || '',
+      cep: cep || '',
+      street: street || '',
+      logradouro: street || '',
+      number: number || '',
+      numero: number || '',
+      complement: complement || '',
+      complemento: complement || '',
+      neighborhood: neighborhood || '',
+      bairro: neighborhood || '',
+      city: city || '',
+      cidade: city || '',
+      state: state || '',
+      estado: state || '',
+      bankName: bankName,
+      bank_name: bankName,
+      accountType: accountType,
+      account_type: accountType,
+      agency: agency,
+      account: account,
+      documentType: documentType
+    };
+
+    const userDataForUpload: UserDataForUpload = {
       state: state || 'XX',
       fullName: fullName || 'Usuario',
       cpf: cpf || '',
       cnpj: cnpj || '',
       accountCategory: accountCategory || ''
     };
-    
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    
-    if (files) {
-      console.log('📤 Processando arquivos (documento frente, verso, selfie e comprovante de residência)...');
 
-      // Processar cada tipo de documento
-      if (files.documentFront) {
-        const doc = await uploadFile(files.documentFront[0], user.id, 'document_front', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          // Capturar o URL da pasta do primeiro documento uploaded
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-            console.log('📁 URL da pasta capturado:', userFolderUrl);
-          }
-        }
+    const formDataForNotification = {
+      fullName: fullName || '',
+      email: email || '',
+      phone: phone,
+      cpf: cpf || '',
+      cnpj: cnpj || '',
+      birthDate: '',
+      address: {
+        cep: cep || '',
+        street: street || '',
+        city: city || '',
+        state: state || ''
+      },
+      bankInfo: {
+        bank: bankName,
+        agency: agency,
+        account: account
       }
-      
-      if (files.documentBack) {
-        const doc = await uploadFile(files.documentBack[0], user.id, 'document_back', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-          }
-        }
-      }
-      
-      if (files.selfie) {
-        const doc = await uploadFile(files.selfie[0], user.id, 'selfie', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-          }
-        }
-      }
-      
-      if (files.residenceProof) {
-        const doc = await uploadFile(files.residenceProof[0], user.id, 'residence_proof', pool, userDataForUpload, documentType);
-        if (doc) {
-          uploadedDocuments.push(doc);
-          if (!userFolderUrl && doc.userFolderUrl) {
-            userFolderUrl = doc.userFolderUrl;
-          }
-        }
-      }
-    }
-    
-    // Se não temos URL da pasta (nenhum documento foi enviado), mas o Google Drive está habilitado,
-    // vamos criar uma pasta vazia para ter o link
-    if (!userFolderUrl && process.env.GOOGLE_DRIVE_ENABLED === 'true') {
-      try {
-        console.log('📁 Criando pasta no Google Drive mesmo sem documentos...');
-        const folderUrl = await getUserFolderUrl({
-          userId: user.id,
-          state: state || 'XX',
-          fullName: fullName || 'Usuario',
-          cpf: cpf || '',
-          cnpj: cnpj || '',
-          accountCategory: accountCategory || ''
-        });
-        
-        if (folderUrl) {
-          userFolderUrl = folderUrl;
-          console.log('📁 Pasta criada com sucesso:', userFolderUrl);
-        }
-      } catch (error) {
-        console.log('⚠️ Não foi possível criar pasta automaticamente:', error instanceof Error ? error.message : 'Erro desconhecido');
-      }
-    }
-    
-    // Enviar notificação WhatsApp
-    try {
-      console.log('📱 Enviando notificação WhatsApp...');
-      const formDataForNotification = {
-        fullName: fullName || '',
-        email: email || '',
-        phone: phone,
-        cpf: cpf || '',
-        cnpj: cnpj || '', // Adicionar CNPJ para o template WhatsApp
-        birthDate: '', // Você pode adicionar este campo se necessário
-        address: {
-          cep: cep || '',
-          street: street || '',
-          city: city || '',
-          state: state || ''
-        },
-        bankInfo: {
-          bank: bankName,
-          agency: agency,
-          account: account
-        },
-        documentsFolder: userFolderUrl ? {
-          url: userFolderUrl,
-          folderId: uploadedDocuments.find(doc => doc.userFolderId)?.userFolderId || ''
-        } : undefined
-      };
-      
-      console.log('📱 Dados para notificação WhatsApp:', {
-        ...formDataForNotification,
-        documentsFolder: formDataForNotification.documentsFolder
+    };
+
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+    const backgroundTask: BackgroundTaskData = {
+      userId: user.id,
+      userDataForKommo,
+      userDataForUpload,
+      files,
+      documentType,
+      formDataForNotification
+    };
+
+    // Executar processamento em background (não aguardar conclusão)
+    backgroundProcessor.processBackgroundTasks(backgroundTask)
+      .then(() => {
+        console.log(`✅ Processamento em background concluído para usuário ${user.id}`);
+      })
+      .catch((error) => {
+        console.error(`❌ Erro no processamento em background para usuário ${user.id}:`, 
+          error instanceof Error ? error.message : 'Erro desconhecido');
       });
-      
-      await whatsappNotifier.sendFormNotification(formDataForNotification);
-    } catch (whatsappError) {
-      console.error('⚠️ Erro ao enviar notificação WhatsApp (não crítico):', whatsappError instanceof Error ? whatsappError.message : 'Erro desconhecido');
-      // Não falha a operação se o WhatsApp falhar
-    }
-    
-    res.json({
-      success: true,
-      message: 'Celular, dados bancários e documentos salvos com sucesso!',
-      data: {
-        id: user.id,
-        nome: user.nome,
-        email: user.email,
-        created_at: user.created_at,
-        documents: uploadedDocuments
-      }
-    });
     
   } catch (error) {
     console.error('❌ Erro ao salvar usuário:', error);
