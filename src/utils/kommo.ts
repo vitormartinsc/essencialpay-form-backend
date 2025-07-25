@@ -1,12 +1,8 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 
-// Carregar .env.local em desenvolvimento
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config({ path: '.env.local' });
-} else {
-  dotenv.config();
-}
+// Carregar .env
+dotenv.config();
 
 // Configurações do Kommo
 const KOMMO_ENABLED = process.env.KOMMO_ENABLED === 'true';
