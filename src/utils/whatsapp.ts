@@ -148,10 +148,12 @@ export class WhatsAppNotifier {
 • Agência: ${formData.bankInfo.agency}
 • Conta: ${formData.bankInfo.account}`;
 
-    // Adicionar link da pasta se disponível
+    // Adicionar informações sobre documentos
+    message += `\n\n📁 *Documentos:*`;
     if (formData.documentsFolder?.url) {
-      message += `\n\n📁 *Documentos:*
-🔗 *Pasta no Drive:* ${formData.documentsFolder.url}`;
+      message += `\n🔗 *Pasta no Drive:* ${formData.documentsFolder.url}`;
+    } else {
+      message += `\n📋 *Status:* Aguardando envio de documentos`;
     }
 
     message += `\n\n✅ Formulário completo recebido e processado!`;

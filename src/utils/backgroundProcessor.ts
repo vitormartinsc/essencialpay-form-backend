@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { updateKommoLeadWithPersonalData, UserData } from './kommo';
 import { uploadFile } from './fileUpload';
+import { getUserFolderUrl } from './folderHelper';
 import { whatsappNotifier } from './whatsapp';
 
 interface UserDataForUpload {
@@ -48,11 +49,11 @@ export class BackgroundProcessor {
     // 1. Atualizar dados no Kommo
     await this.updateKommoData(userDataForKommo);
 
-    // 2. Processar uploads para Google Drive
+        // 2. Processar uploads para Google Drive
     const { uploadedDocuments, userFolderUrl } = await this.processFileUploads(
+      files || {}, 
       userId, 
       userDataForUpload, 
-      files, 
       documentType
     );
 
@@ -79,23 +80,20 @@ export class BackgroundProcessor {
   /**
    * Processa uploads para Google Drive
    */
+  // Método para processar uploads de arquivos com cache de pasta
   private async processFileUploads(
+    files: { [fieldname: string]: Express.Multer.File[] },
     userId: number,
     userDataForUpload: UserDataForUpload,
-    files?: { [fieldname: string]: Express.Multer.File[] },
     documentType?: string
   ): Promise<{ uploadedDocuments: any[], userFolderUrl?: string }> {
     const uploadedDocuments: any[] = [];
     let userFolderUrl: string | undefined;
-
-    if (!files) {
-      console.log('📁 Nenhum arquivo para upload');
-      return { uploadedDocuments, userFolderUrl };
-    }
+    let cachedFolderId: string | undefined;
 
     try {
       console.log('📤 Processando arquivos para Google Drive...');
-
+      
       // Processar cada tipo de documento
       const fileTypes = ['documentFront', 'documentBack', 'selfie', 'residenceProof'];
       const fileTypeMap = {
@@ -114,15 +112,29 @@ export class BackgroundProcessor {
               fileTypeMap[fileType as keyof typeof fileTypeMap], 
               this.pool, 
               userDataForUpload, 
-              documentType
+              documentType,
+              cachedFolderId // Passar o ID da pasta já criada
             );
             
             if (doc) {
               uploadedDocuments.push(doc);
+              console.log(`📄 Documento ${fileType} processado:`, {
+                id: doc.id,
+                fileName: doc.fileName,
+                userFolderId: doc.userFolderId,
+                userFolderUrl: doc.userFolderUrl
+              });
+              
               // Capturar o URL da pasta do primeiro documento uploaded
               if (!userFolderUrl && doc.userFolderUrl) {
                 userFolderUrl = doc.userFolderUrl;
                 console.log('📁 URL da pasta capturado:', userFolderUrl);
+              }
+              
+              // Cachear o ID da pasta para os próximos uploads
+              if (!cachedFolderId && doc.userFolderId) {
+                cachedFolderId = doc.userFolderId;
+                console.log('🗂️ ID da pasta cacheado para próximos uploads:', cachedFolderId);
               }
             }
           } catch (uploadError) {
@@ -151,17 +163,54 @@ export class BackgroundProcessor {
   ): Promise<void> {
     try {
       console.log('📱 Enviando notificação WhatsApp...');
+      console.log('📁 userFolderUrl recebido:', userFolderUrl);
+      console.log('📄 Documentos uploadados:', uploadedDocuments?.length || 0);
+      
+      // Se não temos userFolderUrl (porque não houve uploads), tentar criar uma pasta
+      let finalUserFolderUrl = userFolderUrl;
+      
+      if (!finalUserFolderUrl) {
+        console.log('📁 Sem pasta de arquivos, tentando criar pasta do usuário...');
+        
+        // Extrair dados necessários do formDataForNotification
+        const userData = {
+          userId: 'temp', // Será ignorado na função getUserFolderUrl
+          state: formDataForNotification.address?.state || 'XX',
+          fullName: formDataForNotification.fullName || 'Usuario',
+          cpf: formDataForNotification.cpf || '',
+          cnpj: formDataForNotification.cnpj || '',
+          accountCategory: formDataForNotification.accountCategory || ''
+        };
+        
+        try {
+          const folderUrl = await getUserFolderUrl(userData);
+          if (folderUrl) {
+            finalUserFolderUrl = folderUrl;
+            console.log('✅ Pasta do usuário criada:', finalUserFolderUrl);
+          } else {
+            console.log('⚠️ Não foi possível criar pasta do usuário (Google Drive pode estar desabilitado)');
+          }
+        } catch (error) {
+          console.error('❌ Erro ao criar pasta do usuário:', error);
+          // Continuar mesmo sem pasta
+        }
+      }
       
       // Adicionar informações da pasta do Google Drive se disponível
       const notificationData = {
         ...formDataForNotification,
-        documentsFolder: userFolderUrl ? {
-          url: userFolderUrl,
+        documentsFolder: finalUserFolderUrl ? {
+          url: finalUserFolderUrl,
           folderId: uploadedDocuments?.find(doc => doc.userFolderId)?.userFolderId || ''
         } : undefined
       };
 
-            await whatsappNotifier.sendFormNotification(notificationData);
+      console.log('📨 Dados da notificação para WhatsApp:', {
+        hasDocumentsFolder: !!notificationData.documentsFolder,
+        documentsFolder: notificationData.documentsFolder
+      });
+
+      await whatsappNotifier.sendFormNotification(notificationData);
       console.log('✅ Notificação WhatsApp enviada com sucesso');
     } catch (whatsappError) {
       console.error('⚠️ Erro ao enviar notificação WhatsApp (não crítico):', 

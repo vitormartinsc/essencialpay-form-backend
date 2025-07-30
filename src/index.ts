@@ -464,6 +464,11 @@ app.get('/debug/env', (req: Request, res: Response) => {
       hasAWS: !!process.env.AWS_ACCESS_KEY_ID,
       kommoEnabled: process.env.KOMMO_ENABLED === 'true',
       hasKommoToken: !!process.env.KOMMO_ACCESS_TOKEN,
+      googleDriveEnabled: process.env.GOOGLE_DRIVE_ENABLED === 'true',
+      hasGoogleCredentials: !!process.env.GOOGLE_CREDENTIALS,
+      hasSharedDriveId: !!process.env.GOOGLE_SHARED_DRIVE_ID,
+      whatsappEnabled: process.env.WHATSAPP_ENABLED === 'true',
+      hasWhatsappToken: !!process.env.WHATSAPP_ACCESS_TOKEN,
     }
   });
 });
@@ -540,6 +545,76 @@ app.post('/api/test-whatsapp-template', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Erro interno no teste do template WhatsApp'
+    });
+  }
+});
+
+// Endpoint para testar WhatsApp sem arquivos (verificar criação de pasta)
+app.post('/api/test-whatsapp-no-files', async (req: Request, res: Response) => {
+  try {
+    console.log('🧪 Testando notificação WhatsApp sem arquivos...');
+    
+    if (!whatsappNotifier.isConfigured()) {
+      return res.status(400).json({
+        success: false,
+        message: 'WhatsApp não está configurado. Verifique as variáveis de ambiente.'
+      });
+    }
+
+    // Dados de teste sem arquivos
+    const testFormData = {
+      fullName: "João da Silva",
+      email: "joao@teste.com",
+      phone: "(31) 99999-9999",
+      cpf: "123.456.789-00",
+      cnpj: "",
+      birthDate: "",
+      address: {
+        cep: "30000-000",
+        street: "Rua Teste, 123",
+        city: "Belo Horizonte",
+        state: "MG"
+      },
+      bankInfo: {
+        bank: "Banco Teste",
+        agency: "1234",
+        account: "567890"
+      }
+    };
+
+    // Simular processamento em background
+    const backgroundProcessor = new BackgroundProcessor(pool);
+    
+    // Simular dados para background (sem arquivos)
+    const backgroundTask = {
+      userId: 999,
+      userDataForKommo: testFormData as any,
+      userDataForUpload: {
+        state: testFormData.address.state,
+        fullName: testFormData.fullName,
+        cpf: testFormData.cpf,
+        cnpj: testFormData.cnpj,
+        accountCategory: 'pessoa_fisica'
+      },
+      files: undefined, // Sem arquivos
+      documentType: undefined,
+      formDataForNotification: testFormData
+    };
+
+    // Executar processamento (que deve criar a pasta e enviar WhatsApp)
+    await backgroundProcessor.processBackgroundTasks(backgroundTask);
+
+    res.json({
+      success: true,
+      message: 'Teste sem arquivos executado com sucesso! Verifique os logs e a mensagem WhatsApp.',
+      testData: testFormData
+    });
+
+  } catch (error) {
+    console.error('❌ Erro no teste WhatsApp sem arquivos:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno no teste WhatsApp sem arquivos'
     });
   }
 });

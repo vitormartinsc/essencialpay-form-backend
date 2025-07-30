@@ -148,7 +148,8 @@ export async function uploadFileToGoogleDrive(
     cnpj?: string;
     accountCategory?: string;
   },
-  docType?: string // Parâmetro para indicar se é RG ou CNH
+  docType?: string, // Parâmetro para indicar se é RG ou CNH
+  cachedFolderId?: string // ID da pasta já criada para evitar buscas desnecessárias
 ): Promise<UploadResult | null> {
   if (!GOOGLE_DRIVE_ENABLED) {
     console.log('Google Drive desabilitado - pulando upload');
@@ -169,44 +170,52 @@ export async function uploadFileToGoogleDrive(
       throw new Error('GOOGLE_DRIVE_PARENT_FOLDER_ID não configurado');
     }
 
-    // 2. Criar pasta do usuário no formato: ESTADO - Nome CPF/CNPJ
-    let userFolderName = '';
-    
-    if (userData) {
-      const state = userData.state || 'XX';
-      const name = userData.fullName || 'Usuario';
-      
-      // Determinar se usa CPF ou CNPJ baseado no accountCategory ou nos dados disponíveis
-      let documento = '';
-      if (userData.accountCategory === 'pessoa_fisica' && userData.cpf) {
-        documento = userData.cpf;
-      } else if (userData.accountCategory === 'pessoa_juridica' && userData.cnpj) {
-        documento = userData.cnpj;
-      } else if (userData.cpf) {
-        documento = userData.cpf;
-      } else if (userData.cnpj) {
-        documento = userData.cnpj;
-      } else {
-        documento = 'SEM_DOC';
-      }
-      
-      userFolderName = `${state} - ${name} ${documento}`;
-    } else {
-      userFolderName = `user_${userId}`;
-    }
+    let userFolderId: string;
 
-    // Limpar caracteres inválidos para nomes de pasta no Google Drive
-    // Remover caracteres especiais e simplificar aspas
-    userFolderName = userFolderName
+    // Se temos um ID de pasta cacheado, usar ele diretamente (otimização)
+    if (cachedFolderId) {
+      userFolderId = cachedFolderId;
+      console.log(`🗂️ Usando pasta cacheada: ${cachedFolderId}`);
+    } else {
+      // 2. Criar pasta do usuário no formato: ESTADO - Nome CPF/CNPJ
+      let userFolderName = '';
+      
+      if (userData) {
+        const state = userData.state || 'XX';
+        const name = userData.fullName || 'Usuario';
+        
+        // Determinar se usa CPF ou CNPJ baseado no accountCategory ou nos dados disponíveis
+        let documento = '';
+        if (userData.accountCategory === 'pessoa_fisica' && userData.cpf) {
+          documento = userData.cpf;
+        } else if (userData.accountCategory === 'pessoa_juridica' && userData.cnpj) {
+          documento = userData.cnpj;
+        } else if (userData.cpf) {
+          documento = userData.cpf;
+        } else if (userData.cnpj) {
+          documento = userData.cnpj;
+        } else {
+          documento = 'SEM_DOC';
+        }
+        
+        userFolderName = `${state} - ${name} ${documento}`;
+      } else {
+        userFolderName = `user_${userId}`;
+      }
+
+      // Limpar caracteres inválidos para nomes de pasta no Google Drive
+      // Remover caracteres especiais e simplificar aspas
+      userFolderName = userFolderName
       .replace(/[<>:"/\\|?*]/g, '_')
       .replace(/'/g, '')  // Remover aspas simples que podem causar problemas na query
       .replace(/\s+/g, ' ')  // Normalizar espaços múltiplos
       .trim();
 
-    const userFolderId = await createFolderIfNotExists(
-      userFolderName,
-      GOOGLE_PARENT_FOLDER_ID  // Agora criamos diretamente dentro de "2. Cadastro"
-    );
+      userFolderId = await createFolderIfNotExists(
+        userFolderName,
+        GOOGLE_PARENT_FOLDER_ID  // Agora criamos diretamente dentro de "2. Cadastro"
+      );
+    }
 
     // Gerar nome amigável para o arquivo
     const friendlyFileName = generateFriendlyFileName(documentType, fileName, docType);
@@ -222,7 +231,7 @@ export async function uploadFileToGoogleDrive(
       body: Readable.from(fileBuffer)
     };
 
-    console.log(`📤 Fazendo upload de ${friendlyFileName} para Google Drive na pasta: ${userFolderName}...`);
+    console.log(`📤 Fazendo upload de ${friendlyFileName} para Google Drive...`);
 
     // Fazer upload
     const response = await drive.files.create({

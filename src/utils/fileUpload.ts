@@ -66,7 +66,7 @@ async function uploadToS3(
 }
 
 /**
- * Faz upload de um arquivo usando Google Drive
+ * Faz upload para Google Drive
  */
 async function uploadToGoogleDrive(
   file: Express.Multer.File,
@@ -79,7 +79,8 @@ async function uploadToGoogleDrive(
     cnpj?: string;
     accountCategory?: string;
   },
-  docType?: string // Novo parâmetro para RG ou CNH
+  docType?: string, // Novo parâmetro para RG ou CNH
+  cachedFolderId?: string // ID da pasta já criada para evitar buscas desnecessárias
 ): Promise<UploadResult | null> {
   try {
     const result = await uploadFileToGoogleDrive(
@@ -89,7 +90,8 @@ async function uploadToGoogleDrive(
       userId,
       documentType,
       userData,
-      docType // Passar o tipo de documento (RG ou CNH)
+      docType, // Passar o tipo de documento (RG ou CNH)
+      cachedFolderId // Passar o ID da pasta cacheada
     );
 
     if (!result) {
@@ -127,7 +129,8 @@ export async function uploadFile(
     cnpj?: string;
     accountCategory?: string;
   },
-  docType?: string // Novo parâmetro para RG ou CNH
+  docType?: string, // Novo parâmetro para RG ou CNH
+  cachedFolderId?: string // ID da pasta já criada para otimização
 ): Promise<UploadResult | null> {
   if (!file) return null;
 
@@ -137,7 +140,7 @@ export async function uploadFile(
 
   // Escolher o método de upload
   if (USE_GOOGLE_DRIVE) {
-    uploadResult = await uploadToGoogleDrive(file, userId, documentType, userData, docType);
+    uploadResult = await uploadToGoogleDrive(file, userId, documentType, userData, docType, cachedFolderId);
   } else if (USE_AWS_S3) {
     uploadResult = await uploadToS3(file, userId, documentType);
   } else {
@@ -181,7 +184,9 @@ export async function uploadFile(
       url: uploadResult.url,
       fileId: uploadResult.fileId,
       viewUrl: uploadResult.viewUrl,
-      downloadUrl: uploadResult.downloadUrl
+      downloadUrl: uploadResult.downloadUrl,
+      userFolderId: uploadResult.userFolderId,
+      userFolderUrl: uploadResult.userFolderUrl
     };
   } catch (error) {
     console.error(`❌ Erro ao salvar documento ${documentType} no banco:`, error);
