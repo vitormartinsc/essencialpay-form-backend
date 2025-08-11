@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../essencialpay-form-frontend"
+		},
+		{
+			"path": "../../essencialsaque-form-frontend"
 		}
 	],
 	"settings": {}

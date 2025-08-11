@@ -270,7 +270,8 @@ app.post('/api/users', upload.fields([
       bankInfo: {
         bank: bankName,
         agency: agency,
-        account: account
+        account: account,
+        accountType: accountType
       }
     };
 
@@ -504,7 +505,8 @@ app.post('/api/test-whatsapp-template', async (req: Request, res: Response) => {
       bankInfo: {
         bank: "Banco Teste",
         agency: "1234",
-        account: "567890"
+        account: "567890",
+        accountType: "corrente"
       },
       documentsFolder: {
         url: "https://drive.google.com/drive/folders/teste",

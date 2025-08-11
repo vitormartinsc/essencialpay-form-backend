@@ -39,6 +39,7 @@ interface FormData {
     bank: string;
     agency: string;
     account: string;
+    accountType?: string;
   };
   documentsFolder?: {
     url: string;
@@ -94,9 +95,10 @@ export class WhatsAppNotifier {
             { type: "text", text: documento },                           // {{4}} CPF ou CNPJ completo
             { type: "text", text: formData.address.state },              // {{5}} Estado
             { type: "text", text: formData.bankInfo.bank },              // {{6}} Banco
-            { type: "text", text: formData.bankInfo.agency },            // {{7}} Agência
-            { type: "text", text: formData.bankInfo.account },           // {{8}} Conta
-            { type: "text", text: formData.documentsFolder?.url || "Não disponível" } // {{9}} Pasta
+            { type: "text", text: formData.bankInfo.accountType || "Não informado" }, // {{7}} Tipo de Conta
+            { type: "text", text: formData.bankInfo.agency },            // {{8}} Agência
+            { type: "text", text: formData.bankInfo.account },           // {{9}} Conta
+            { type: "text", text: formData.documentsFolder?.url || "Não disponível" } // {{10}} Pasta
           ]
         }
       ]
@@ -145,6 +147,7 @@ export class WhatsAppNotifier {
     // Adicionar dados bancários
     message += `\n\n🏦 *Dados Bancários:*
 • Banco: ${formData.bankInfo.bank}
+• Tipo de Conta: ${formData.bankInfo.accountType || 'Não informado'}
 • Agência: ${formData.bankInfo.agency}
 • Conta: ${formData.bankInfo.account}`;
 
