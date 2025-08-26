@@ -11,14 +11,14 @@
 
 ```bash
 # Múltiplos números (formato: país + DDD + número, sem espaços)
-WHATSAPP_RECIPIENT_NUMBERS=5531985585575,5531985514814,5531975807468,5531972254165
+WHATSAPP_RECIPIENT_NUMBERS=5511999999999,5511888888888,5511777777777,5511666666666
 ```
 
-**Números configurados:**
-- +55 31 9855-8575 → `5531985585575`
-- +55 31 8551-4814 → `5531985514814`  
-- +55 31 7580-7468 → `5531975807468`
-- +55 31 7225-4165 → `5531972254165`
+**Números configurados (exemplo):**
+- +55 11 99999-9999 → `5511999999999`
+- +55 11 88888-8888 → `5511888888888`  
+- +55 11 77777-7777 → `5511777777777`
+- +55 11 66666-6666 → `5511666666666`
 
 ### 3. Funcionalidades
 
@@ -38,9 +38,9 @@ WHATSAPP_RECIPIENT_NUMBERS=5531985585575,5531985514814,5531975807468,55319722541
 ### 4. Logs e Monitoramento
 
 ```
-📱 Enviando notificação TEMPLATE para 4 números: 5531985585575, 5531985514814, 5531975807468, 5531972254165
-✅ WhatsApp notification sent successfully to 5531985585575
-✅ WhatsApp notification sent successfully to 5531985514814
+📱 Enviando notificação TEMPLATE para 4 números: 5511999999999, 5511888888888, 5511777777777, 5511666666666
+✅ WhatsApp notification sent successfully to 5511999999999
+✅ WhatsApp notification sent successfully to 5511888888888
 📊 WhatsApp Envios: 4/4 sucessos
 ```
 
@@ -64,6 +64,6 @@ Retorno esperado:
   "success": true,
   "message": "Notificação WhatsApp enviada com sucesso!",
   "recipientCount": 4,
-  "recipients": ["5531985585575", "5531985514814", "5531975807468", "5531972254165"]
+  "recipients": ["5511999999999", "5511888888888", "5511777777777", "5511666666666"]
 }
 ```
