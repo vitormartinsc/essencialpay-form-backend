@@ -395,9 +395,17 @@ app.get('/api/cep/:cep', async (req: Request, res: Response) => {
   }
 });
 
-// Rota de teste para WhatsApp
+// Rota de teste para WhatsApp (APENAS EM DESENVOLVIMENTO)
 app.post('/api/test-whatsapp', async (req: Request, res: Response) => {
   try {
+    // 🚨 SEGURANÇA: Apenas permitir em desenvolvimento
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({
+        success: false,
+        message: 'Endpoint de teste não disponível em produção'
+      });
+    }
+
     const { message } = req.body;
     
     if (!message) {
@@ -452,15 +460,21 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
-// Debug endpoint para verificar variáveis de ambiente
+// Debug endpoint para verificar variáveis de ambiente (APENAS EM DESENVOLVIMENTO)
 app.get('/debug/env', (req: Request, res: Response) => {
+  // 🚨 SEGURANÇA: Apenas permitir em desenvolvimento
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({
+      success: false,
+      message: 'Endpoint não disponível em produção'
+    });
+  }
+
   res.json({
     success: true,
     environment: {
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
-      FRONTEND_URL: process.env.FRONTEND_URL,
-      CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
       hasDatabase: !!process.env.DATABASE_URL,
       hasAWS: !!process.env.AWS_ACCESS_KEY_ID,
       kommoEnabled: process.env.KOMMO_ENABLED === 'true',
@@ -470,13 +484,22 @@ app.get('/debug/env', (req: Request, res: Response) => {
       hasSharedDriveId: !!process.env.GOOGLE_SHARED_DRIVE_ID,
       whatsappEnabled: process.env.WHATSAPP_ENABLED === 'true',
       hasWhatsappToken: !!process.env.WHATSAPP_ACCESS_TOKEN,
+      // Removido: FRONTEND_URL e CORS_ALLOWED_ORIGINS por segurança
     }
   });
 });
 
-// Endpoint para testar template WhatsApp com CNPJ
+// Endpoint para testar template WhatsApp com CNPJ (APENAS EM DESENVOLVIMENTO)
 app.post('/api/test-whatsapp-template', async (req: Request, res: Response) => {
   try {
+    // 🚨 SEGURANÇA: Apenas permitir em desenvolvimento
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({
+        success: false,
+        message: 'Endpoint de teste não disponível em produção'
+      });
+    }
+
     const { useCnpj = false } = req.body;
     
     console.log('🧪 Testando template WhatsApp com documento:', useCnpj ? 'CNPJ' : 'CPF');
@@ -551,9 +574,17 @@ app.post('/api/test-whatsapp-template', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint para testar WhatsApp sem arquivos (verificar criação de pasta)
+// Endpoint para testar WhatsApp sem arquivos (APENAS EM DESENVOLVIMENTO)
 app.post('/api/test-whatsapp-no-files', async (req: Request, res: Response) => {
   try {
+    // 🚨 SEGURANÇA: Apenas permitir em desenvolvimento
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({
+        success: false,
+        message: 'Endpoint de teste não disponível em produção'
+      });
+    }
+
     console.log('🧪 Testando notificação WhatsApp sem arquivos...');
     
     if (!whatsappNotifier.isConfigured()) {
